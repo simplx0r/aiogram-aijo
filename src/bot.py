@@ -4,15 +4,15 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 
-from .config.config import settings # Импортируем наши настройки
+from src.config import settings
 
 # Инициализация хранилища FSM (в памяти)
 storage = MemoryStorage()
 
-# Инициализация бота с использованием токена из настроек
-# и установкой parse_mode по умолчанию
+# Инициализация бота с токеном из настроек
+# Указываем parse_mode по умолчанию для удобства
 bot = Bot(
-    token=settings.bot_token.get_secret_value(), # Получаем токен безопасно
+    token=settings.bot_token.get_secret_value(),
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
 )
 

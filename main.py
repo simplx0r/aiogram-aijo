@@ -10,8 +10,8 @@ from aiogram.client.default import DefaultBotProperties # Для указани�
 
 # Импортируем настройки, обработчики и базу данных
 from src.config.config import settings
-from src.handlers import commands, callbacks, forwarded, group_messages # Импортируем все роутеры
-from src.db.database import async_init_db
+from src.handlers import common, links, stats, callbacks, forwarded, group_messages # Импортируем все роутеры
+from src.services.database import async_init_db
 from src.bot import bot # Используем наш экземпляр бота
 from src import scheduler # Импортируем наш планировщик
 
@@ -58,10 +58,12 @@ async def main():
     logger.info("Configuring bot...")
 
     # Регистрируем роутеры
-    dp.include_router(commands.router)
+    dp.include_router(common.router)
+    dp.include_router(links.router)
+    dp.include_router(stats.router)
     dp.include_router(callbacks.router)
-    dp.include_router(forwarded.router) # Добавляем роутер для пересылки
-    dp.include_router(group_messages.router) # Регистрируем роутер для сообщений группы
+    dp.include_router(forwarded.router)
+    dp.include_router(group_messages.router)
 
     # Регистрируем обработчики жизненного цикла
     dp.startup.register(on_startup)
