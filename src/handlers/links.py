@@ -1,16 +1,19 @@
 # src/handlers/links.py
 import logging
-from typing import Optional
+from typing import Optional, NamedTuple
 from aiogram import Bot, Router, F
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.utils.formatting import Text
 
 # Утилиты, константы и конфигурация
 from src.config import load_config
+from src.utils.constants import URL_REGEX, DATE_REGEX, TIME_REGEX
 from src.utils.date_parser import parse_datetime_string, DateTimeParseError, PastDateTimeError
 from src.utils.keyboards import LinkCallbackFactory, get_link_keyboard
-from src.utils.constants import URL_REGEX, DATE_REGEX, TIME_REGEX
+from src.utils.misc import get_random_phrase
+from src.db.models import Link
 
 # Сервисы БД
 from src.services.link_service import (
@@ -25,42 +28,58 @@ from src.services.stats_service import (
     increment_interview_count as db_increment_interview_count
 )
 
+# --- НОВОЕ: Структура для аргументов и ошибка парсинга --- #
+class AddLinkArgs(NamedTuple):
+    link_url: str
+    date_str: Optional[str]
+    time_str: Optional[str]
+    announcement_text: str
+
+class ArgumentParsingError(ValueError):
+    """Исключение для ошибок во время парсинга аргументов команды."""
+    pass
+# --- КОНЕЦ НОВОГО --- #
+
 # Загрузка конфигурации
 config = load_config()
 GROUP_CHAT_ID = config.tg_bot.group_chat_id
 
 router = Router()
 
-# --- Обработчик команды добавления ссылки --- #
+# --- Вспомогательная функция для парсинга аргументов --- #
+def _parse_addlink_args(args_str: Optional[str]) -> AddLinkArgs:
+    """Парсит строку аргументов команды /addlink.
 
-@router.message(Command("addlink"))
-async def add_link(message: Message, command: CommandObject, bot: Bot):
-    """Обработчик команды /addlink."""
-    if not command.args:
-        await message.answer(
+    Args:
+        args_str: Строка аргументов (command.args).
+
+    Returns:
+        AddLinkArgs: Разобранные аргументы.
+
+    Raises:
+        ArgumentParsingError: Если парсинг не удался.
+    """
+    if not args_str:
+        raise ArgumentParsingError(
             "Пожалуйста, укажите ссылку после команды.\n"
             "Пример: /addlink https://example.com [ДД.ММ ЧЧ:ММ] [Текст объявления]"
         )
-        return
 
-    args_str = command.args.strip()
-    command_parts = args_str.split()
+    command_parts = args_str.strip().split()
 
     link_url: Optional[str] = None
     date_str: Optional[str] = None
     time_str: Optional[str] = None
     announcement_text_parts = []
 
-    # Пытаемся извлечь ссылку, дату и время
     current_part_index = 0
 
     # 1. Ссылка (должна быть первой)
-    if URL_REGEX.match(command_parts[current_part_index]):
+    if current_part_index < len(command_parts) and URL_REGEX.match(command_parts[current_part_index]):
         link_url = command_parts[current_part_index]
         current_part_index += 1
     else:
-        await message.answer("Неверный формат ссылки. Ссылка должна начинаться с http:// или https://")
-        return
+        raise ArgumentParsingError("Неверный формат ссылки. Ссылка должна начинаться с http:// или https://")
 
     # 2. Дата (опционально, следующая часть)
     if current_part_index < len(command_parts) and DATE_REGEX.match(command_parts[current_part_index]):
@@ -69,15 +88,11 @@ async def add_link(message: Message, command: CommandObject, bot: Bot):
 
     # 3. Время (опционально, следует за датой ИЛИ если дата не указана, но есть время)
     if current_part_index < len(command_parts) and TIME_REGEX.match(command_parts[current_part_index]):
-        # Время может идти сразу после ссылки, если нет даты
-        if date_str is None and current_part_index == 1:
-             time_str = command_parts[current_part_index]
-             current_part_index += 1
-        # Время идет после даты
-        elif date_str is not None and current_part_index == 2:
-             time_str = command_parts[current_part_index]
-             current_part_index += 1
-        # Иначе - это не время, а часть текста
+        is_time_immediately_after_link = (date_str is None and current_part_index == 1)
+        is_time_after_date = (date_str is not None and current_part_index == 2)
+        if is_time_immediately_after_link or is_time_after_date:
+            time_str = command_parts[current_part_index]
+            current_part_index += 1
 
     # 4. Текст объявления (все остальное)
     announcement_text_parts = command_parts[current_part_index:]
@@ -85,12 +100,127 @@ async def add_link(message: Message, command: CommandObject, bot: Bot):
 
     # Валидация: если есть дата, должно быть и время, и наоборот
     if (date_str and not time_str) or (not date_str and time_str):
-        await message.answer("Для указания времени события необходимо указать и дату, и время (ДД.ММ ЧЧ:ММ). Либо не указывать их вовсе.")
+        raise ArgumentParsingError("Для указания времени события необходимо указать и дату, и время (ДД.ММ ЧЧ:ММ). Либо не указывать их вовсе.")
+
+    return AddLinkArgs(
+        link_url=link_url,
+        date_str=date_str,
+        time_str=time_str,
+        announcement_text=announcement_text
+    )
+
+
+# --- Вспомогательная функция для отправки анонса в группу --- #
+async def _send_announcement_to_group(bot: Bot, link: Link) -> bool:
+    """Отправляет анонс ссылки в группу и обновляет message_id в БД.
+
+    Args:
+        bot: Экземпляр бота.
+        link: Объект Link с данными (включая link.id).
+
+    Returns:
+        bool: True, если сообщение успешно отправлено и message_id обновлен в БД,
+              False в противном случае.
+    """
+    group_message_text = f"{link.announcement_text}\n\n" \
+                         f"Добавил: [User {link.added_by_user_id}]" # TODO: Получить имя пользователя? Или оставить ID?
+                         # f"Добавил: {message.from_user.full_name}" # Имя пользователя недоступно здесь
+    if link.event_time_str:
+        group_message_text += f"\n📅 Дата и время: {link.event_time_str} МСК"
+
+    keyboard = get_link_keyboard(link.id)
+
+    try:
+        sent_message = await bot.send_message(
+            chat_id=GROUP_CHAT_ID,
+            text=group_message_text,
+            reply_markup=keyboard,
+            disable_web_page_preview=True
+        )
+        logging.info(f"Sent message for link_id {link.id} to group {GROUP_CHAT_ID}, message_id={sent_message.message_id}")
+
+        # Обновляем message_id в базе данных
+        success = await db_update_link_message_id(link.id, sent_message.message_id)
+        if success:
+            return True
+        else:
+            # Если не удалось обновить ID в БД - это проблема.
+            logging.error(f"Failed to update message_id {sent_message.message_id} for link_id {link.id} in DB.")
+            # Попытка удалить некорректное сообщение из группы
+            try:
+                await bot.delete_message(chat_id=GROUP_CHAT_ID, message_id=sent_message.message_id)
+                logging.warning(f"Deleted group message {sent_message.message_id} due to DB update failure.")
+            except Exception as del_err:
+                logging.error(f"Failed to delete message {sent_message.message_id} from group {GROUP_CHAT_ID} after DB update failure: {del_err}")
+            return False # Сигнализируем об ошибке
+
+    except TelegramBadRequest as e:
+        logging.error(f"Telegram error sending link message to group {GROUP_CHAT_ID} for link {link.id}: {e}")
+        return False
+    except Exception as e:
+        logging.exception(f"Unexpected error sending link message to group {GROUP_CHAT_ID} for link {link.id}: {e}")
+        return False
+
+
+# --- Вспомогательная функция для отправки ссылки пользователю --- #
+async def _send_link_to_user(bot: Bot, user_id: int, link_url: str, link_id: int) -> tuple[bool, str]:
+    """Отправляет ссылку личным сообщением пользователю.
+
+    Args:
+        bot: Экземпляр бота.
+        user_id: ID пользователя, которому отправляем.
+        link_url: URL ссылки для отправки.
+        link_id: ID ссылки (для логирования).
+
+    Returns:
+        tuple[bool, str]: Кортеж (success: bool, message: str).
+                        success=True, message="Ссылка отправлена..."
+                        success=False, message="Ошибка: Не могу отправить..."
+    """
+    # Получаем случайную фразу
+    random_phrase = get_random_phrase()
+    try:
+        await bot.send_message(
+            chat_id=user_id,
+            text=f"{random_phrase}\n{link_url}",
+            disable_web_page_preview=False # Включаем превью для ЛС
+        )
+        logging.info(f"Sent link {link_id} to user {user_id}")
+        return True, "Ссылка отправлена вам в личные сообщения!"
+    except TelegramBadRequest as e:
+        if "bot was blocked by the user" in str(e) or "user not found" in str(e) or "chat not found" in str(e):
+            logging.warning(f"Cannot send link {link_id} to user {user_id}: Bot blocked or chat not started.")
+            return False, "Не могу отправить вам ссылку. Пожалуйста, начните диалог со мной (напишите /start) и попробуйте снова."
+        else:
+            logging.error(f"Telegram error sending link {link_id} to user {user_id}: {e}")
+            return False, "Произошла ошибка при отправке ссылки."
+    except Exception as e:
+        logging.exception(f"Unexpected error sending link {link_id} to user {user_id}: {e}")
+        return False, "Произошла непредвиденная ошибка."
+
+
+# --- Обработчик команды добавления ссылки --- #
+
+@router.message(Command("addlink"))
+async def add_link(message: Message, command: CommandObject, bot: Bot):
+    """Обработчик команды /addlink."""
+    # --- Парсинг аргументов вынесен --- #
+    try:
+        parsed_args = _parse_addlink_args(command.args)
+    except ArgumentParsingError as e:
+        await message.answer(str(e))
         return
 
+    # --- Использование разобранных аргументов --- #
+    link_url = parsed_args.link_url
+    date_str = parsed_args.date_str
+    time_str = parsed_args.time_str
+    announcement_text = parsed_args.announcement_text
+
+    # --- Логика обработки даты/времени --- #
     event_time_utc = None
     event_time_str = None
-    if date_str and time_str:
+    if date_str and time_str: # Проверка уже сделана в парсере
         try:
             event_time_utc = parse_datetime_string(date_str, time_str)
             event_time_str = f"{date_str} {time_str}"
@@ -119,49 +249,25 @@ async def add_link(message: Message, command: CommandObject, bot: Bot):
         await message.answer("Не удалось сохранить ссылку. Попробуйте позже.")
         return
 
-    # --- Отправка сообщения в группу --- #
-    group_message_text = f"{added_link.announcement_text}\n\n" \
-                         f"Добавил: {message.from_user.full_name}"
-    if added_link.event_time_str:
-        group_message_text += f"\n📅 Дата и время: {added_link.event_time_str} МСК"
+    # --- Отправка сообщения в группу вынесена --- #
+    send_success = await _send_announcement_to_group(bot, added_link)
 
-    keyboard = get_link_keyboard(added_link.id)
-
-    try:
-        sent_message = await bot.send_message(
-            chat_id=GROUP_CHAT_ID,
-            text=group_message_text,
-            reply_markup=keyboard,
-            disable_web_page_preview=True # Отключаем превью ссылки
+    if send_success:
+        await message.reply(
+            f"Ссылка успешно добавлена и отправлена в группу! "
+            f"{f'Напоминание установлено на {event_time_str} МСК.' if event_time_str else ''}"
         )
-        logging.info(f"Sent message for link_id {added_link.id} to group {GROUP_CHAT_ID}, message_id={sent_message.message_id}")
+    else:
+        # Сообщение пользователю об ошибке
+        # Текст ошибки зависит от того, что вернула _send_announcement_to_group
+        # Сейчас она просто возвращает False, нужна более детальная обработка или логи
+        await message.reply(
+            "Произошла ошибка при отправке сообщения в группу или обновлении записи в БД. "
+            "Ссылка сохранена, но анонс в группе может отсутствовать или быть некорректным. "
+            "Свяжитесь с администратором."
+            # Альтернатива: попытаться удалить added_link из БД, если отправка не удалась?
+        )
 
-        # Обновляем message_id в базе данных
-        success = await db_update_link_message_id(added_link.id, sent_message.message_id)
-        if success:
-            await message.reply(
-                f"Ссылка успешно добавлена и отправлена в группу! "
-                f"{f'Напоминание установлено на {event_time_str} МСК.' if event_time_str else ''}"
-            )
-        else:
-            # Если не удалось обновить ID, это проблема, но пользователю уже ответили успехом о добавлении.
-            # Нужно логировать и, возможно, пытаться исправить вручную или удалить сообщение из группы.
-            logging.error(f"Failed to update message_id {sent_message.message_id} for link_id {added_link.id} in DB.")
-            # Можно попробовать удалить сообщение из группы
-            try:
-                await bot.delete_message(chat_id=GROUP_CHAT_ID, message_id=sent_message.message_id)
-                await message.reply("Произошла ошибка при сохранении ID сообщения. Запись удалена из группы. Попробуйте добавить ссылку снова.")
-            except Exception as del_err:
-                logging.error(f"Failed to delete message {sent_message.message_id} from group {GROUP_CHAT_ID} after DB update failure: {del_err}")
-                await message.reply("Произошла ошибка при сохранении ID сообщения. Запись в группе могла остаться. Свяжитесь с администратором.")
-
-    except TelegramBadRequest as e:
-        logging.error(f"Telegram error sending link message to group {GROUP_CHAT_ID}: {e}")
-        # TODO: Попытаться удалить запись из БД, если не удалось отправить в группу?
-        await message.reply("Ошибка при отправке сообщения в группу. Возможно, у бота нет прав или чат не найден.")
-    except Exception as e:
-        logging.exception(f"Unexpected error sending link message to group {GROUP_CHAT_ID}: {e}")
-        await message.reply("Произошла непредвиденная ошибка при отправке в группу.")
 
 # --- Обработчик нажатия кнопки "Получить ссылку" --- #
 
@@ -174,7 +280,7 @@ async def get_link(query: CallbackQuery, callback_data: LinkCallbackFactory, bot
 
     logging.info(f"User {user_id} ({username}) requested link_id {link_id}")
 
-    # Логируем запрос в БД
+    # Логируем запрос в БД и обновляем статистику
     await db_log_link_request(user_id, username, link_id)
     await db_increment_interview_count(user_id, username)
 
@@ -182,27 +288,12 @@ async def get_link(query: CallbackQuery, callback_data: LinkCallbackFactory, bot
     link_record = await db_get_link_by_id(link_id)
 
     if link_record:
-        try:
-            # Отправляем ссылку личным сообщением
-            await bot.send_message(
-                chat_id=user_id,
-                text=f"Держи ссылку:\n{link_record.link_url}",
-                disable_web_page_preview=False # Включаем превью для ЛС
-            )
-            # Отвечаем на колбек, чтобы кнопка перестала "грузиться"
-            await query.answer(text="Ссылка отправлена вам в личные сообщения!", show_alert=False)
-            logging.info(f"Sent link {link_id} to user {user_id}")
-        except TelegramBadRequest as e:
-            # Частая ошибка - пользователь не начал диалог с ботом
-            if "bot was blocked by the user" in str(e) or "user not found" in str(e) or "chat not found" in str(e):
-                logging.warning(f"Cannot send link {link_id} to user {user_id}: Bot blocked or chat not started.")
-                await query.answer(text="Не могу отправить вам ссылку. Пожалуйста, начните диалог со мной (напишите /start) и попробуйте снова.", show_alert=True)
-            else:
-                logging.error(f"Telegram error sending link {link_id} to user {user_id}: {e}")
-                await query.answer(text="Произошла ошибка при отправке ссылки.", show_alert=True)
-        except Exception as e:
-            logging.exception(f"Unexpected error sending link {link_id} to user {user_id}: {e}")
-            await query.answer(text="Произошла непредвиденная ошибка.", show_alert=True)
+        # --- Отправка ссылки вынесена --- #
+        send_success, message_text = await _send_link_to_user(bot, user_id, link_record.link_url, link_id)
+
+        # Отвечаем на колбек
+        await query.answer(text=message_text, show_alert=not send_success) # Показываем alert при ошибке
+
     else:
         logging.warning(f"User {user_id} requested non-existent link_id {link_id}")
         await query.answer(text="Извините, эта ссылка больше не доступна.", show_alert=True)

@@ -7,12 +7,14 @@ from sqlalchemy.exc import SQLAlchemyError
 
 # Импортируем Base для async_init_db
 from src.db.models import Base
+# Импортируем загрузчик конфигурации
+from src.config import load_config
 
-# --- Конфигурация --- (Можно вынести в src/config.py или использовать переменную окружения)
-DATABASE_URL = "sqlite+aiosqlite:///./links_bot.db" # Имя файла БД
+# --- Загрузка конфигурации ---
+settings = load_config()
 
 # --- Настройка SQLAlchemy ---
-engine = create_async_engine(DATABASE_URL, echo=False)
+engine = create_async_engine(settings.db.url, echo=False)
 async_session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 # --- Функции для инициализации и сессий ---
