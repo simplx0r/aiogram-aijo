@@ -28,6 +28,9 @@ scheduler = AsyncIOScheduler(timezone=MOSCOW_TZ)
 
 async def send_reminder(link_id: int, minutes_before: int):
     """Отправляет напоминание в основной чат."""
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    from .handlers.callbacks import LinkCallbackFactory
+
     logging.info(f"Attempting to send {minutes_before}-min reminder for link_id={link_id}")
     link: Optional[Link] = await db.get_link_by_id(link_id) # Нужна новая функция в db
 
@@ -53,12 +56,18 @@ async def send_reminder(link_id: int, minutes_before: int):
     )
 
     try:
+        # Создаем клавиатуру с кнопкой "Получить ссылку"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔗 Получить ссылку", callback_data=LinkCallbackFactory(action="get", link_id=link_id).pack())]
+        ])
+
         # Пытаемся отправить напоминание как новое сообщение или как ответ на исходное?
         # Пока как новое сообщение в тот же топик
         await bot.send_message(
             chat_id=settings.main_group_id,
             text=reminder_text,
             message_thread_id=settings.main_topic_id,
+            reply_markup=keyboard, # Добавляем клавиатуру
             disable_web_page_preview=True
             # reply_to_message_id=link.message_id_in_group # Опционально: сделать ответом
         )
