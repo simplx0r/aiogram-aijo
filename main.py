@@ -9,7 +9,7 @@ from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties # Для указания ParseMode по умолчанию
 
 # Импортируем настройки, обработчики и базу данных
-from src.config.config import settings
+from src.config import load_config # Убрали импорт settings, импортируем load_config
 from src.handlers import common, links, stats, callbacks, forwarded, group_messages # Импортируем все роутеры
 from src.services.database import async_init_db
 from src.bot import bot # Используем наш экземпляр бота
@@ -34,6 +34,8 @@ async def on_startup(dispatcher: Dispatcher, bot: Bot):
     # Импортируем модели ДО инициализации БД, чтобы Base.metadata был полным
     from src.db import models # Явный импорт для регистрации моделей
     logger.info("DB models imported.")
+    # Загрузка конфигурации (НОВОЕ)
+    settings = load_config()
     # Инициализируем базу данных
     await async_init_db()
     # Загружаем незавершенные напоминания из БД и планируем их
@@ -56,6 +58,9 @@ async def on_shutdown(dispatcher: Dispatcher, bot: Bot):
 # --- Основная функция ---
 async def main():
     logger.info("Configuring bot...")
+
+    # Загрузка конфигурации (НОВОЕ)
+    settings = load_config()
 
     # Регистрируем роутеры
     dp.include_router(common.router)
