@@ -148,7 +148,7 @@ async def load_scheduled_jobs():
     """Загружает и планирует напоминания для активных ссылок при старте бота."""
     logging.info("Loading scheduled jobs for PUBLISHED links...")
     # Отложенный импорт
-    from src.services import get_active_links_with_reminders
+    from src.services.link_service import get_active_links_with_reminders
     links = await get_active_links_with_reminders() # Получаем активные и ОПУБЛИКОВАННЫЕ ссылки с временем
     count = 0
     for link in links:
