@@ -33,9 +33,7 @@ async def add_link(
                 added_by_user_id=added_by_user_id,
                 event_time_str=event_time_str,
                 event_time_utc=event_time_utc,
-                is_active=True,
-                reminder_sent_1h=False,
-                reminder_sent_15m=False
+                is_active=True
             )
             session.add(new_link)
             await session.flush() # Получаем ID до коммита
