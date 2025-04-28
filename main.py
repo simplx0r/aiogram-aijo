@@ -35,11 +35,12 @@ async def on_startup(dispatcher: Dispatcher, bot: Bot):
     settings = load_config()
     # Инициализируем базу данных
     await async_init_db()
-    # Загружаем незавершенные напоминания из БД и планируем их
-    await scheduler.load_pending_reminders()
+    # Загрузка и планирование ожидающих напоминаний
+    await scheduler.schedule_initial_reminders()
+    logger.info("Pending reminders scheduled.")
     # Запускаем планировщик
     scheduler.start_scheduler()
-    logger.info("Scheduler started and pending reminders loaded.")
+    logger.info("Scheduler started.")
 
 async def on_shutdown(dispatcher: Dispatcher, bot: Bot):
     """Выполняется при остановке бота."""
