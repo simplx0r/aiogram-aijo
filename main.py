@@ -36,7 +36,7 @@ async def on_startup(dispatcher: Dispatcher, bot: Bot):
     # Инициализируем базу данных
     await async_init_db()
     # Загрузка и планирование ожидающих напоминаний
-    await scheduler.schedule_initial_reminders()
+    await scheduler.load_scheduled_jobs()
     logger.info("Pending reminders scheduled.")
     # Запускаем планировщик
     scheduler.start_scheduler()
