@@ -14,7 +14,7 @@ from src.config.config import settings
 from src.utils.constants import URL_REGEX, DATE_REGEX, TIME_REGEX
 from src.utils.date_parser import parse_datetime_string, DateTimeParseError, PastDateTimeError
 from src.utils.callback_data import ChatSelectCallback # Исправлен путь импорта
-from src.utils.keyboards import LinkCallbackFactory, get_link_keyboard # Оставляем импорт для клавиатуры ссылки
+from src.utils.keyboards import LinkCallbackFactory, get_link_keyboard, create_publish_keyboard # Добавляем импорт клавиатуры
 from src.utils.misc import get_random_phrase
 from src.db.models import Link
 
@@ -43,10 +43,7 @@ class ArgumentParsingError(ValueError):
     pass
 # --- КОНЕЦ НОВОГО --- #
 
-# Загрузка конфигурации
-GROUP_CHAT_ID = settings.main_group_id
-
-router = Router()
+# router = Router()
 
 # --- Вспомогательная функция для парсинга аргументов --- #
 def _parse_addlink_args(args_str: Optional[str]) -> AddLinkArgs:
@@ -113,55 +110,55 @@ def _parse_addlink_args(args_str: Optional[str]) -> AddLinkArgs:
 
 
 # --- Вспомогательная функция для отправки анонса в группу --- #
-async def _send_announcement_to_group(bot: Bot, link: Link) -> bool:
-    """Отправляет анонс ссылки в группу и обновляет message_id в БД.
+async def _send_announcement_to_group(bot: Bot, link: Link, target_chat_id: int) -> Optional[types.Message]:
+    """Отправляет анонс ссылки в указанную группу и обновляет ID сообщения в БД."""
+    if not link:
+        return None
 
-    Args:
-        bot: Экземпляр бота.
-        link: Объект Link с данными (включая link.id).
+    # Составляем текст сообщения
+    base_text = f"🔗 Новая ссылка от пользователя (ID: {link.added_by_user_id})\n\nURL: {link.link_url}"
+    if link.announcement_text:
+        group_message_text = f"{base_text}\n\n{link.announcement_text}"
+    else:
+        group_message_text = base_text
 
-    Returns:
-        bool: True, если сообщение успешно отправлено и message_id обновлен в БД,
-              False в противном случае.
-    """
-    group_message_text = f"{link.announcement_text}\n\n" \
-                         f"Добавил: [User {link.added_by_user_id}]" # TODO: Получить имя пользователя? Или оставить ID?
-                         # f"Добавил: {message.from_user.full_name}" # Имя пользователя недоступно здесь
-    if link.event_time_str:
-        group_message_text += f"\n📅 Дата и время: {link.event_time_str} МСК"
-
+    # Создаем клавиатуру для сообщения в группе
     keyboard = get_link_keyboard(link.id)
 
     try:
         sent_message = await bot.send_message(
-            chat_id=GROUP_CHAT_ID,
+            chat_id=target_chat_id, # Используем переданный chat_id
             text=group_message_text,
             reply_markup=keyboard,
             disable_web_page_preview=True
         )
-        logging.info(f"Sent message for link_id {link.id} to group {GROUP_CHAT_ID}, message_id={sent_message.message_id}")
+        logging.info(f"Sent message for link_id {link.id} to group {target_chat_id}, message_id={sent_message.message_id}")
 
         # Обновляем message_id и chat_id в базе данных
-        success = await db_update_link_message_id(link.id, sent_message.message_id, sent_message.chat.id)
-        if success:
-            return True
-        else:
-            # Если не удалось обновить ID в БД - это проблема.
-            logging.error(f"Failed to update message_id {sent_message.message_id} for link_id {link.id} in DB.")
-            # Попытка удалить некорректное сообщение из группы
-            try:
-                await bot.delete_message(chat_id=GROUP_CHAT_ID, message_id=sent_message.message_id)
-                logging.warning(f"Deleted group message {sent_message.message_id} due to DB update failure.")
-            except Exception as del_err:
-                logging.error(f"Failed to delete message {sent_message.message_id} from group {GROUP_CHAT_ID} after DB update failure: {del_err}")
-            return False # Сигнализируем об ошибке
+        # Теперь обновление происходит в callback_handler'е после успешной отправки
+        # success = await db_update_link_message_id(link.id, sent_message.message_id, sent_message.chat.id)
+        # if success:
+        #     return sent_message
+        # else:
+        #     # Если не удалось обновить ID в БД - это проблема.
+        #     logger.error(f"Failed to update message_id {sent_message.message_id} for link_id {link.id} in DB.")
+        #     # Попытка удалить некорректное сообщение из группы
+        #     try:
+        #         await bot.delete_message(chat_id=target_chat_id, message_id=sent_message.message_id)
+        #         logger.warning(f"Deleted group message {sent_message.message_id} due to DB update failure.")
+        #     except Exception as del_err:
+        #         logger.error(f"Failed to delete group message {sent_message.message_id} after DB error: {del_err}")
+        #     return None # Сообщение отправлено, но обновление не удалось
+
+        # Возвращаем отправленное сообщение, обновление БД будет в другом месте
+        return sent_message
 
     except TelegramBadRequest as e:
-        logging.error(f"Telegram error sending link message to group {GROUP_CHAT_ID} for link {link.id}: {e}")
-        return False
+        logging.error(f"Telegram API error sending link message to group {target_chat_id} for link {link.id}: {e}")
+        return None
     except Exception as e:
-        logging.exception(f"Unexpected error sending link message to group {GROUP_CHAT_ID} for link {link.id}: {e}")
-        return False
+        logging.exception(f"Unexpected error sending link message to group {target_chat_id} for link {link.id}: {e}")
+        return None
 
 
 # --- Вспомогательная функция для отправки ссылки пользователю --- #
@@ -202,6 +199,8 @@ async def _send_link_to_user(bot: Bot, user_id: int, link_url: str, link_id: int
 
 
 # --- Обработчик команды добавления ссылки --- #
+
+router = Router()
 
 @router.message(Command("addlink"))
 async def add_link(message: Message, command: CommandObject, bot: Bot):
@@ -254,23 +253,30 @@ async def add_link(message: Message, command: CommandObject, bot: Bot):
         return
 
     # --- Отправка сообщения в группу вынесена --- #
-    send_success = await _send_announcement_to_group(bot, added_link)
+    # send_success = await _send_announcement_to_group(bot, added_link)
 
-    if send_success:
-        await message.reply(
-            f"Ссылка успешно добавлена и отправлена в группу! "
-            f"{f'Напоминание установлено на {event_time_str} МСК.' if event_time_str else ''}"
+    # Добавляем логгер
+    import logging
+    logger = logging.getLogger(__name__)
+
+    logger.info(f"Пользователь {message.from_user.id} добавил ожидающую ссылку ID: {added_link.id}")
+    # Отправляем клавиатуру для выбора чата
+    publish_keyboard = create_publish_keyboard(added_link.id)
+    if publish_keyboard:
+        await message.answer(
+            f"✅ Ссылка на '{link_url}' добавлена и ожидает публикации.\n\n"
+            f"Выберите чат для анонса:",
+            reply_markup=publish_keyboard
         )
     else:
-        # Сообщение пользователю об ошибке
-        # Текст ошибки зависит от того, что вернула _send_announcement_to_group
-        # Сейчас она просто возвращает False, нужна более детальная обработка или логи
-        await message.reply(
-            "Произошла ошибка при отправке сообщения в группу или обновлении записи в БД. "
-            "Ссылка сохранена, но анонс в группе может отсутствовать или быть некорректным. "
-            "Свяжитесь с администратором."
-            # Альтернатива: попытаться удалить added_link из БД, если отправка не удалась?
+        # Если чаты не настроены, сообщаем об этом
+        logger.warning(f"Не удалось создать клавиатуру публикации для link_id {added_link.id}: ANNOUNCEMENT_TARGET_CHATS не настроен.")
+        await message.answer(
+            f"✅ Ссылка на '{link_url}' добавлена и ожидает публикации.\n\n"
+            f"Не удалось найти настроенные чаты для публикации. Обратитесь к администратору."
         )
+        # Тут можно автоматически опубликовать в дефолтный чат, если он есть, или оставить pending
+        # Пока просто оставляем pending
 
 
 # --- Обработчик нажатия кнопки "Получить ссылку" --- #

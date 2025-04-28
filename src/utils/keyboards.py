@@ -1,10 +1,13 @@
 from aiogram.filters.callback_data import CallbackData
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram import Bot
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.utils.markdown import hlink
-from .callback_data import LinkCallback, ChatSelectCallback
-from src.db.models import Link
-
+# Повторно исправляем импорт, чтобы убедиться, что он содержит только существующие классы
+from .callbacks import PublishLinkCallbackData, ReminderCallbackData, UserStatsCallbackData, LinkCallbackData
+from src.db.models import Link # Используем напрямую модель Link
+from src.config import settings
+from typing import Optional, Dict
 
 class LinkCallbackFactory(CallbackData, prefix="link_action"):
     """Фабрика данных для колбеков, связанных со ссылками."""
@@ -18,7 +21,7 @@ def get_link_keyboard(link_id: int) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(
                 text="🔗 Получить ссылку",
-                callback_data=LinkCallbackFactory(action="get", link_id=link_id).pack()
+                callback_data=LinkCallbackData(action="get", link_id=link_id).pack()
             )
         ]
     ])
@@ -52,10 +55,36 @@ def format_link_message_with_button(link: Link) -> tuple[str, InlineKeyboardMark
     # Используем LinkCallback для кнопки, передавая ID основной записи Link
     builder.button(
         text=button_text,
-        callback_data=LinkCallback(action="get_link", link_id=link.id).pack()
+        callback_data=LinkCallbackData(action="get_link", link_id=link.id).pack()
     )
     reply_markup = builder.as_markup()
 
     return message_text, reply_markup
 
 # --- Функции для создания клавиатур --- #
+
+def create_publish_keyboard(link_id: int) -> Optional[InlineKeyboardMarkup]:
+    """Создает инлайн-клавиатуру для выбора чата публикации."""
+    # Проверяем, что ANNOUNCEMENT_TARGET_CHATS не пуст
+    if not settings.ANNOUNCEMENT_TARGET_CHATS or not isinstance(settings.ANNOUNCEMENT_TARGET_CHATS, dict):
+        # logger.warning("ANNOUNCEMENT_TARGET_CHATS не настроен или имеет неверный формат.") # Логирование лучше делать в хендлере
+        return None
+
+    builder = InlineKeyboardBuilder()
+    for chat_name, chat_id_str in settings.ANNOUNCEMENT_TARGET_CHATS.items():
+        try:
+            chat_id = int(chat_id_str) # Преобразуем ID чата в int
+            builder.button(
+                text=f"Опубликовать в '{chat_name}'", # Исправлены кавычки
+                callback_data=PublishLinkCallbackData(link_id=link_id, chat_id=chat_id)
+            )
+        except ValueError:
+            # logger.error(f"Неверный формат chat_id '{chat_id_str}' для чата '{chat_name}' в ANNOUNCEMENT_TARGET_CHATS.")
+            continue # Пропускаем эту кнопку
+
+    # Если добавлена хотя бы одна кнопка, строим клавиатуру
+    if builder.buttons:
+        builder.adjust(1) # Располагаем кнопки по одной в строке
+        return builder.as_markup()
+    else:
+        return None

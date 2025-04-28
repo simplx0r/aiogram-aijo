@@ -8,7 +8,11 @@ from aiogram.client.default import DefaultBotProperties # Для указани�
 
 # Импортируем настройки, обработчики и базу данных
 from src.config import load_config # Убрали импорт settings, импортируем load_config
-from src.handlers import common, links, stats, callbacks, forwarded, group_messages # Импортируем все роутеры
+from src.handlers import common as common_handlers
+from src.handlers import links as link_handlers
+from src.handlers import stats as stats_handlers
+from src.handlers import callbacks, forwarded, group_messages # Импортируем все роутеры
+from src.utils import callbacks as callback_handlers # Импортируем новый роутер для колбэков
 from src.services.database import async_init_db
 from src.bot import bot # Используем наш экземпляр бота
 from src import scheduler # Импортируем наш планировщик
@@ -70,10 +74,11 @@ async def main():
     logger.info("Logging middleware registered.")
     
     # Регистрируем роутеры
-    dp.include_router(common.router)
-    dp.include_router(links.router)
-    dp.include_router(stats.router)
+    dp.include_router(common_handlers.router)
+    dp.include_router(link_handlers.router)
+    dp.include_router(stats_handlers.router)
     dp.include_router(callbacks.router)
+    dp.include_router(callback_handlers.router) # Регистрируем роутер колбэков
     dp.include_router(forwarded.router)
     dp.include_router(group_messages.router)
 

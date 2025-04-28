@@ -224,3 +224,33 @@ async def delete_link(link_id: int) -> bool:
     except Exception as e:
         logger.exception(f"Unexpected error deleting link ID {link_id}: {e}")
         return False
+
+async def mark_link_published(link_id: int, message_id: int, chat_id: int) -> bool:
+    """Отмечает ссылку как опубликованную, устанавливая pending=False, posted_message_id и posted_chat_id."""
+    try:
+        async with get_session() as session:
+            stmt = (
+                update(Link)
+                .where(Link.id == link_id)
+                .values(
+                    pending=False,
+                    posted_message_id=message_id,
+                    posted_chat_id=chat_id,
+                    updated_at=datetime.datetime.now(datetime.timezone.utc) # Обновляем время изменения
+                 )
+                .execution_options(synchronize_session="fetch")
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            if result.rowcount > 0:
+                logger.info(f"Marked link {link_id} as published in chat {chat_id} with message {message_id}")
+                return True
+            else:
+                logger.warning(f"Attempted to mark non-existent or already published link {link_id} as published.")
+                return False
+    except SQLAlchemyError as e:
+        logger.error(f"Database error marking link {link_id} as published: {e}")
+        return False
+    except Exception as e:
+        logger.exception(f"Unexpected error marking link {link_id} as published: {e}")
+        return False
