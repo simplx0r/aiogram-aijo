@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Optional
+from typing import Optional, Dict
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import SecretStr, Field, ValidationError
@@ -21,6 +21,11 @@ class Settings(BaseSettings):
 
     # Необязательное поле
     main_topic_id: Optional[int] = Field(None, validation_alias='MAIN_TOPIC_ID')
+
+    # Поле для хранения словаря чатов для анонсов (загружается из JSON)
+    announcement_target_chats: Dict[str, int] = Field(
+        default_factory=dict, validation_alias='ANNOUNCEMENT_TARGET_CHATS_JSON'
+    )
 
     # Настройки базы данных (если используется PostgreSQL или другая внешняя БД)
     # db_url: str = Field("sqlite+aiosqlite:///./links.db", validation_alias='DATABASE_URL')
