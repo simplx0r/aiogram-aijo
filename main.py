@@ -13,6 +13,9 @@ from src.services.database import async_init_db
 from src.bot import bot # Используем наш экземпляр бота
 from src import scheduler # Импортируем наш планировщик
 
+# --- Импорт Middleware --- 
+from src.middlewares.logging_middleware import LoggingMiddleware
+
 # --- Импорт Loguru --- 
 from loguru import logger
 from src.logging_config import setup_logging # Импортируем нашу функцию настройки
@@ -59,7 +62,12 @@ async def main():
 
     # Загрузка конфигурации (НОВОЕ)
     settings = load_config()
-
+    
+    # --- Регистрация Middleware --- 
+    # Важно регистрировать middleware ДО роутеров
+    dp.update.outer_middleware(LoggingMiddleware())
+    logger.info("Logging middleware registered.")
+    
     # Регистрируем роутеры
     dp.include_router(common.router)
     dp.include_router(links.router)

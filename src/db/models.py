@@ -94,7 +94,12 @@ class GroupMessageLog(Base):
     username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # Юзернейм (может отсутствовать)
     full_name: Mapped[str] = mapped_column(String(200)) # Полное имя пользователя
     message_text: Mapped[str] = mapped_column(Text) # Текст сообщения
-    timestamp: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True) # Время сообщения (UTC)
+    # Используем datetime.now(timezone.utc) вместо устаревшего utcnow
+    # Оборачиваем в lambda, чтобы функция вызывалась при создании записи, а не при импорте модуля
+    timestamp: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
 
     def __repr__(self):
         return f"<GroupMessageLog(id={self.id}, user_id={self.user_id}, text='{self.message_text[:20]}...', time='{self.timestamp}')>"
+
+# Импортируем datetime и timezone из модуля datetime
+from datetime import datetime, timezone
