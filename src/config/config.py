@@ -52,3 +52,6 @@ def load_config() -> Settings:
 # token = settings.bot.bot_token.get_secret_value()
 # admin = settings.bot.admin_id
 # db_url = settings.db.url
+
+# Глобальный экземпляр настроек
+settings = load_config()

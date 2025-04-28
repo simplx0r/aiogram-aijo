@@ -4,7 +4,7 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 
-from src.config import settings
+from src.config.config import settings
 
 # Инициализация хранилища FSM (в памяти)
 storage = MemoryStorage()
