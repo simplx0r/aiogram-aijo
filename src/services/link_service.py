@@ -108,28 +108,32 @@ async def get_link_by_id(link_id: int) -> Optional[Link]:
         logger.exception(f"Unexpected error getting link by ID {link_id}: {e}")
         return None
 
-async def update_link_message_id(link_id: int, message_id: int) -> bool:
-    """Обновляет message_id_in_group для существующей ссылки."""
+async def update_link_message_id(link_id: int, message_id: int, chat_id: int) -> bool:
+    """Обновляет posted_message_id и posted_chat_id для существующей ссылки."""
     try:
         async with get_session() as session:
             stmt = (
                 update(Link)
                 .where(Link.id == link_id)
-                .values(message_id_in_group=message_id)
+                .values(posted_message_id=message_id, posted_chat_id=chat_id) # Исправлены имена колонок
                 .execution_options(synchronize_session="fetch") # или False, если нет cascade
             )
             result = await session.execute(stmt)
+            # Коммит нужен после execute для update/delete/insert
+            await session.commit()
             if result.rowcount > 0:
-                logger.info(f"Updated message_id for link_id {link_id} to {message_id}")
+                logger.info(f"Updated message_id={message_id} and chat_id={chat_id} for link_id {link_id}")
                 return True
             else:
-                logger.warning(f"Attempted to update message_id for non-existent link_id {link_id}")
+                logger.warning(f"Attempted to update message/chat_id for non-existent link_id {link_id}")
                 return False
     except SQLAlchemyError as e:
-        logger.error(f"Database error updating message_id for link_id {link_id}: {e}")
+        logger.error(f"Database error updating message/chat_id for link_id {link_id}: {e}")
+        # Неявный rollback благодаря async with
         return False
     except Exception as e:
-        logger.exception(f"Unexpected error updating message_id for link_id {link_id}: {e}")
+        logger.exception(f"Unexpected error updating message/chat_id for link_id {link_id}: {e}")
+        # Неявный rollback
         return False
 
 async def update_reminder_status(link_id: int, minutes_before: int) -> bool:

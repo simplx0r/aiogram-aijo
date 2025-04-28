@@ -94,19 +94,22 @@ async def increment_interview_count(user_id: int, username: Optional[str]) -> bo
                     username=username,
                     message_count=0, # Сообщений от бота не считаем
                     interview_count=1,
-                    first_message_timestamp=now,
                     last_message_timestamp=now
                 )
                 session.add(user_stat)
                 logging.info(f"Created new user stats entry and incremented interview count for user {user_id}")
 
-            # await session.flush()
+            await session.commit() # Commit changes for both update and add
         return True
     except SQLAlchemyError as e:
         logging.error(f"Database error incrementing interview count for user_id={user_id}: {e}")
+        # Rollback in case of error during commit or other operations
+        # Although context manager should handle rollback on exceptions, explicit call might be needed depending on exact flow
+        # await session.rollback() # Consider adding if necessary, but typically handled by context manager
         return False
     except Exception as e:
         logging.exception(f"Unexpected error incrementing interview count for user_id={user_id}: {e}")
+        # await session.rollback()
         return False
 
 # --- Функции для получения статистики --- #
