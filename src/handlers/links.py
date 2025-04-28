@@ -141,8 +141,8 @@ async def _send_announcement_to_group(bot: Bot, link: Link) -> bool:
         )
         logging.info(f"Sent message for link_id {link.id} to group {GROUP_CHAT_ID}, message_id={sent_message.message_id}")
 
-        # Обновляем message_id в базе данных
-        success = await db_update_link_message_id(link.id, sent_message.message_id)
+        # Обновляем message_id и chat_id в базе данных
+        success = await db_update_link_message_id(link.id, sent_message.message_id, sent_message.chat.id)
         if success:
             return True
         else:
