@@ -239,10 +239,12 @@ async def add_link(message: Message, command: CommandObject, bot: Bot):
 
     # --- Взаимодействие с БД --- #
     added_link = await db_add_link(
-        message_id=None, # message_id добавим после отправки в группу
+        user_id=message.from_user.id,
+        username=message.from_user.username,
+        first_name=message.from_user.first_name,
+        last_name=message.from_user.last_name,
         link_url=link_url,
         announcement_text=announcement_text,
-        added_by_user_id=message.from_user.id,
         event_time_str=event_time_str,
         event_time_utc=event_time_utc
     )
