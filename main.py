@@ -1,7 +1,5 @@
 # main.py (New version)
 import asyncio
-import logging
-import sys
 from contextlib import suppress
 
 from aiogram import Bot, Dispatcher
@@ -15,13 +13,9 @@ from src.services.database import async_init_db
 from src.bot import bot # Используем наш экземпляр бота
 from src import scheduler # Импортируем наш планировщик
 
-# --- Настройка логирования ---
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-    stream=sys.stdout, # Вывод логов в stdout
-)
-logger = logging.getLogger(__name__)
+# --- Импорт Loguru --- 
+from loguru import logger
+from src.logging_config import setup_logging # Импортируем нашу функцию настройки
 
 # --- Инициализация диспетчера ---
 # Убрали создание Bot здесь, используем импортированный
@@ -29,7 +23,7 @@ dp = Dispatcher()
 
 # --- Функции жизненного цикла ---
 async def on_startup(dispatcher: Dispatcher, bot: Bot):
-    """Выполняется при запуске бота."""
+    """Выполняется при запуске бота.""" 
     logger.info("Starting up...")
     # Импортируем модели ДО инициализации БД, чтобы Base.metadata был полным
     from src.db import models # Явный импорт для регистрации моделей
@@ -46,7 +40,7 @@ async def on_startup(dispatcher: Dispatcher, bot: Bot):
 
 async def on_shutdown(dispatcher: Dispatcher, bot: Bot):
     """Выполняется при остановке бота."""
-    logger.info("Shutting down...")
+    logger.info("Shutting down...") 
     # Останавливаем планировщик
     scheduler.stop_scheduler()
     logger.info("Scheduler stopped.")
@@ -57,6 +51,10 @@ async def on_shutdown(dispatcher: Dispatcher, bot: Bot):
 
 # --- Основная функция ---
 async def main():
+    # --- Настройка Loguru --- 
+    # Вызываем настройку в самом начале, чтобы все логи были перехвачены
+    setup_logging()
+    
     logger.info("Configuring bot...")
 
     # Загрузка конфигурации (НОВОЕ)
@@ -75,6 +73,7 @@ async def main():
     dp.shutdown.register(on_shutdown)
 
     logger.info("Starting polling...")
+    
     # Удаляем вебхук и пропускаем старые обновления
     await bot.delete_webhook(drop_pending_updates=True)
     # Запускаем поллинг
@@ -82,6 +81,8 @@ async def main():
 
 
 if __name__ == "__main__":
+    logger.info("Starting bot...") # Лог перед запуском
     # Запускаем основной цикл событий asyncio
     with suppress(KeyboardInterrupt, SystemExit): # Обработка Ctrl+C и sys.exit
         asyncio.run(main())
+    logger.info("Bot stopped.") # Лог после остановки

@@ -3,7 +3,7 @@ import datetime
 
 from sqlalchemy import (
     create_engine, MetaData, Table, Integer, String, Column, DateTime,
-    ForeignKey, BigInteger, Boolean # Используем BigInteger для chat_id/user_id
+    ForeignKey, BigInteger, Boolean, UniqueConstraint, Text # Используем BigInteger для chat_id/user_id
 )
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func # для CURRENT_TIMESTAMP
@@ -84,3 +84,17 @@ class UserStats(Base):
 
     def __repr__(self):
         return f"<UserStats(user_id={self.user_id}, interviews={self.interview_count}, messages={self.message_count})>"
+
+# Новая модель для логирования сообщений из группы
+class GroupMessageLog(Base):
+    __tablename__ = 'group_message_logs'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(index=True) # ID пользователя Telegram
+    username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # Юзернейм (может отсутствовать)
+    full_name: Mapped[str] = mapped_column(String(200)) # Полное имя пользователя
+    message_text: Mapped[str] = mapped_column(Text) # Текст сообщения
+    timestamp: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True) # Время сообщения (UTC)
+
+    def __repr__(self):
+        return f"<GroupMessageLog(id={self.id}, user_id={self.user_id}, text='{self.message_text[:20]}...', time='{self.timestamp}')>"

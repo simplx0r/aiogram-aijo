@@ -12,7 +12,7 @@ storage = MemoryStorage()
 # Инициализация бота с токеном из настроек
 # Указываем parse_mode по умолчанию для удобства
 bot = Bot(
-    token=settings.bot_token.get_secret_value(),
+    token=settings.bot_token.get_secret_value(), # Доступ напрямую, но нужен get_secret_value()
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
 )
 
