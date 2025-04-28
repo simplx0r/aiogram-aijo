@@ -63,28 +63,30 @@ def format_link_message_with_button(link: Link) -> tuple[str, InlineKeyboardMark
 
 # --- Функции для создания клавиатур --- #
 
-def create_publish_keyboard(link_id: int) -> Optional[InlineKeyboardMarkup]:
-    """Создает инлайн-клавиатуру для выбора чата публикации."""
-    # Проверяем, что ANNOUNCEMENT_TARGET_CHATS не пуст
-    if not settings.ANNOUNCEMENT_TARGET_CHATS or not isinstance(settings.ANNOUNCEMENT_TARGET_CHATS, dict):
-        # logger.warning("ANNOUNCEMENT_TARGET_CHATS не настроен или имеет неверный формат.") # Логирование лучше делать в хендлере
-        return None
-
+def create_publish_keyboard(link_id: int) -> InlineKeyboardMarkup:
+    """Создает клавиатуру для выбора чата публикации."""
     builder = InlineKeyboardBuilder()
-    for chat_name, chat_id_str in settings.ANNOUNCEMENT_TARGET_CHATS.items():
-        try:
-            chat_id = int(chat_id_str) # Преобразуем ID чата в int
-            builder.button(
-                text=f"Опубликовать в '{chat_name}'", # Исправлены кавычки
-                callback_data=PublishLinkCallbackData(link_id=link_id, chat_id=chat_id)
-            )
-        except ValueError:
-            # logger.error(f"Неверный формат chat_id '{chat_id_str}' для чата '{chat_name}' в ANNOUNCEMENT_TARGET_CHATS.")
-            continue # Пропускаем эту кнопку
 
-    # Если добавлена хотя бы одна кнопка, строим клавиатуру
-    if builder.buttons:
-        builder.adjust(1) # Располагаем кнопки по одной в строке
-        return builder.as_markup()
-    else:
-        return None
+    # Используем корректное имя атрибута (нижний регистр)
+    target_chats = settings.announcement_target_chats
+
+    if not target_chats or not isinstance(target_chats, dict):
+        # logger.warning("Словарь announcement_target_chats не найден или пуст в настройках.")
+        # Можно вернуть пустую клавиатуру или клавиатуру с сообщением об ошибке
+        # builder.button(text="Ошибка: Чаты не настроены", callback_data="error:no_chats")
+        return builder.as_markup() # Возвращаем пустую клавиатуру
+
+    # Добавляем кнопки для каждого чата из настроек
+    for chat_name, chat_id in target_chats.items():
+        callback_data = PublishLinkCallbackData(
+            link_id=link_id, chat_id=chat_id
+        )
+        builder.button(
+            text=f"✅ Опубликовать в '{chat_name}'",
+            callback_data=callback_data.pack()
+        )
+
+    # Можно добавить кнопку отмены
+    builder.button(text="❌ Отмена", callback_data=LinkCallbackData(action="cancel_publish", link_id=link_id).pack())
+    builder.adjust(1) # По одной кнопке в ряду
+    return builder.as_markup()
