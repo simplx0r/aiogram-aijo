@@ -13,7 +13,8 @@ from aiogram.utils.markdown import hlink
 from src.config.config import settings
 from src.utils.constants import URL_REGEX, DATE_REGEX, TIME_REGEX
 from src.utils.date_parser import parse_datetime_string, DateTimeParseError, PastDateTimeError
-from src.utils.keyboards import LinkCallbackFactory, get_link_keyboard, ChatSelectCallback
+from src.utils.callback_data import ChatSelectCallback # Исправлен путь импорта
+from src.utils.keyboards import LinkCallbackFactory, get_link_keyboard # Оставляем импорт для клавиатуры ссылки
 from src.utils.misc import get_random_phrase
 from src.db.models import Link
 
