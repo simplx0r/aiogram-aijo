@@ -2,8 +2,11 @@ import logging
 from aiogram import Router, F, Bot, types
 from aiogram.types import CallbackQuery
 from aiogram.exceptions import TelegramAPIError
-from src.services import get_link_by_id, log_link_request, user_service
+from src.config import settings
+from src.services.link_service import get_link_by_id, publish_link # Импортируем из link_service
+from src.services.request_log_service import log_link_request # Импортируем из request_log_service
 from src.utils.callback_data import LinkCallback, ChatSelectCallback
+from src.utils.keyboards import format_link_message_with_button # Импортируем из keyboards
 from aiogram.utils.markdown import hlink
 
 router = Router()
@@ -135,7 +138,7 @@ async def handle_publish_link(query: CallbackQuery, callback_data: ChatSelectCal
         logging.info(f"Sent announcement message {sent_message.message_id} to chat {target_chat_id} for link {link_id}")
 
         # 4. Публикуем ссылку в базе (обновляем статус, ID, планируем напоминания)
-        published_link = await user_service.publish_link(
+        published_link = await publish_link(
             link_id=link.id,
             target_chat_id=target_chat_id,
             posted_message_id=sent_message.message_id

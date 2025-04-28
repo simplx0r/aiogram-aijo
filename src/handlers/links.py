@@ -30,7 +30,6 @@ from src.services.request_log_service import (
 from src.services.stats_service import (
     increment_interview_count as db_increment_interview_count
 )
-from src.services.user_service import add_or_update_user
 
 # --- НОВОЕ: Структура для аргументов и ошибка парсинга --- #
 class AddLinkArgs(NamedTuple):
