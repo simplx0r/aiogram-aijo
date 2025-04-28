@@ -1,8 +1,8 @@
 import logging
 from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery
-from aiogram.exceptions import TelegramAPIError 
-from ..db import database as db
+from aiogram.exceptions import TelegramAPIError
+from src.services import get_link_by_id, log_link_request
 
 router = Router()
 
@@ -21,7 +21,7 @@ async def process_get_link_callback(callback_query: CallbackQuery, bot: Bot):
     logging.info(f"User {user.id} (@{user.username}) clicked button for link_id {link_id}")
 
     # 1. Получаем информацию о ссылке из БД по её ID
-    link_db = await db.get_link_by_id(link_id)
+    link_db = await get_link_by_id(link_id)
 
     # Проверяем, что ссылка найдена и активна
     if not link_db or not link_db.is_active:
@@ -59,7 +59,7 @@ async def process_get_link_callback(callback_query: CallbackQuery, bot: Bot):
         # Логируем успешный запрос в БД
         # Важно: Используем message_id_in_group для связи с анонсом, если он есть
         if link_db.message_id_in_group:
-             await db.log_link_request(
+             await log_link_request(
                 user_id=user.id,
                 username=user.username,
                 link_message_id=link_db.message_id_in_group # Логируем ID анонса

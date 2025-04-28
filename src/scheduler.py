@@ -10,11 +10,15 @@ from aiogram import Bot # Для отправки сообщений
 from aiogram.utils.markdown import hbold
 from aiogram.exceptions import TelegramAPIError
 
-# Импортируем необходимые компоненты из нашего проекта
-from .db import database as db
-from .db.models import Link
-from .config.config import settings
-from .bot import bot # Импортируем сам объект бота
+# Импортируем необходимые компоненты
+from src.db.models import Link
+from src.config.config import settings
+from src.bot import bot # Импортируем сам объект бота
+from src.services import (
+    get_link_by_id,
+    update_reminder_status,
+    get_pending_reminder_links
+)
 
 # --- Настройки часового пояса ---
 MOSCOW_TZ = pytz.timezone('Europe/Moscow')
@@ -32,7 +36,7 @@ async def send_reminder(link_id: int, minutes_before: int):
     from .handlers.callbacks import LinkCallbackFactory
 
     logging.info(f"Attempting to send {minutes_before}-min reminder for link_id={link_id}")
-    link: Optional[Link] = await db.get_link_by_id(link_id) # Нужна новая функция в db
+    link: Optional[Link] = await get_link_by_id(link_id) # Нужна новая функция в db
 
     if not link:
         logging.warning(f"Link with id={link_id} not found for reminder.")
@@ -74,7 +78,7 @@ async def send_reminder(link_id: int, minutes_before: int):
         logging.info(f"Sent {minutes_before}-min reminder for link id={link_id} to group {settings.main_group_id}")
 
         # Обновляем статус отправки в БД
-        await db.update_reminder_status(link_id, minutes_before) # Нужна новая функция в db
+        await update_reminder_status(link_id, minutes_before) # Нужна новая функция в db
 
     except TelegramAPIError as e:
         logging.error(f"Failed to send {minutes_before}-min reminder for link id={link_id}: {e}")
@@ -146,7 +150,7 @@ async def schedule_reminders_for_link(link: Link):
 async def load_pending_reminders():
     """Загружает и планирует напоминания для активных ссылок из БД при старте."""
     logging.info("Loading pending reminders from database...")
-    pending_links = await db.get_pending_reminder_links() # Нужна новая функция в db
+    pending_links = await get_pending_reminder_links()
     count = 0
     for link in pending_links:
         await schedule_reminders_for_link(link)

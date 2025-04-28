@@ -8,7 +8,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.utils.formatting import Text
 
 # Утилиты, константы и конфигурация
-from src.config import load_config
+from src.config.config import settings
 from src.utils.constants import URL_REGEX, DATE_REGEX, TIME_REGEX
 from src.utils.date_parser import parse_datetime_string, DateTimeParseError, PastDateTimeError
 from src.utils.keyboards import LinkCallbackFactory, get_link_keyboard
@@ -41,8 +41,7 @@ class ArgumentParsingError(ValueError):
 # --- КОНЕЦ НОВОГО --- #
 
 # Загрузка конфигурации
-config = load_config()
-GROUP_CHAT_ID = config.tg_bot.group_chat_id
+GROUP_CHAT_ID = settings.main_group_id
 
 router = Router()
 
