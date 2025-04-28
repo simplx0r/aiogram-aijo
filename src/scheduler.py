@@ -19,6 +19,8 @@ from src.services import (
     update_reminder_status,
     get_pending_reminder_links
 )
+from src.services.link_service import (get_active_links_with_reminders, # Уже возвращает только is_active=True, pending=False
+                                        update_reminder_status)
 
 # --- Настройки часового пояса ---
 MOSCOW_TZ = pytz.timezone('Europe/Moscow')
@@ -90,6 +92,7 @@ async def send_reminder(link_id: int, minutes_before: int):
 
 async def schedule_reminders_for_link(link: Link):
     """Планирует задачи напоминаний для конкретной ссылки."""
+    assert not link.pending, f"Attempted to schedule reminder for a pending link ID: {link.id}"
     if not link or not link.event_time_utc or not link.id:
         logging.warning(f"Skipping scheduling for invalid link data: {link}")
         return
@@ -147,12 +150,12 @@ async def schedule_reminders_for_link(link: Link):
             logging.info(f"10-min reminder time for link id={link_id} is in the past, skipping scheduling.")
 
 
-async def load_pending_reminders():
-    """Загружает и планирует напоминания для активных ссылок из БД при старте."""
-    logging.info("Loading pending reminders from database...")
-    pending_links = await get_pending_reminder_links()
+async def load_scheduled_jobs():
+    """Загружает и планирует напоминания для активных ссылок при старте бота."""
+    logging.info("Loading scheduled jobs for PUBLISHED links...")
+    links = await get_active_links_with_reminders() # Получаем активные и ОПУБЛИКОВАННЫЕ ссылки с временем
     count = 0
-    for link in pending_links:
+    for link in links:
         await schedule_reminders_for_link(link)
         count += 1
     logging.info(f"Scheduled reminders for {count} links.")

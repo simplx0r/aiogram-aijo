@@ -1,17 +1,19 @@
 # src/handlers/links.py
 import logging
 from typing import Optional, NamedTuple
-from aiogram import Bot, Router, F
+from aiogram import Bot, Router, F, types
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.utils.formatting import Text
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.utils.markdown import hlink
 
 # Утилиты, константы и конфигурация
 from src.config.config import settings
 from src.utils.constants import URL_REGEX, DATE_REGEX, TIME_REGEX
 from src.utils.date_parser import parse_datetime_string, DateTimeParseError, PastDateTimeError
-from src.utils.keyboards import LinkCallbackFactory, get_link_keyboard
+from src.utils.keyboards import LinkCallbackFactory, get_link_keyboard, ChatSelectCallback
 from src.utils.misc import get_random_phrase
 from src.db.models import Link
 
@@ -27,6 +29,7 @@ from src.services.request_log_service import (
 from src.services.stats_service import (
     increment_interview_count as db_increment_interview_count
 )
+from src.services.user_service import add_or_update_user
 
 # --- НОВОЕ: Структура для аргументов и ошибка парсинга --- #
 class AddLinkArgs(NamedTuple):
@@ -296,3 +299,107 @@ async def get_link(query: CallbackQuery, callback_data: LinkCallbackFactory, bot
     else:
         logging.warning(f"User {user_id} requested non-existent link_id {link_id}")
         await query.answer(text="Извините, эта ссылка больше не доступна.", show_alert=True)
+
+
+# --- Обработчик команды добавления ссылки --- #
+
+@router.message(Command("addlink"))
+async def handle_add_link(message: Message, command: Optional[CommandObject] = None, bot: Optional[Bot] = None):
+    """Обрабатывает команду /addlink или пересылку сообщения для добавления ссылки.
+    Создает 'pending' ссылку и отправляет пользователю клавиатуру для выбора чата публикации.
+    """
+    if not message.from_user:
+        logger.warning("Received /addlink command without user info.")
+        return
+
+    user_id = message.from_user.id
+    username = message.from_user.username
+    first_name = message.from_user.first_name
+    last_name = message.from_user.last_name
+
+    logger.info(f"Handling link add request from user {user_id} ({username or first_name})")
+
+    link_url: Optional[str] = None
+    raw_text: Optional[str] = None
+
+    if message.text:
+        link_url_match = URL_REGEX.search(message.text)
+        link_url = link_url_match.group(0) if link_url_match else None
+        raw_text = message.text # Весь текст для дальнейшего парсинга времени и описания
+    elif message.forward_from or message.forward_from_chat:
+        if message.forward_from:
+            logger.info(f"Received forwarded message from user {message.forward_from.id}")
+        elif message.forward_from_chat:
+            logger.info(f"Received forwarded message from chat {message.forward_from_chat.id}")
+        if message.forward_date:
+            logger.info(f"Forwarded message date: {message.forward_date}")
+        if message.text:
+            link_url_match = URL_REGEX.search(message.text)
+            link_url = link_url_match.group(0) if link_url_match else None
+            raw_text = message.text # Весь текст для дальнейшего парсинга времени и описания
+
+    if not link_url:
+        logger.warning(f"No link found in message from user {message.from_user.id}")
+        await message.reply("Не удалось найти ссылку в вашем сообщении.")
+        return
+
+    # Извлекаем время и описание
+    event_time_str: Optional[str] = None
+    event_time_utc: Optional[datetime] = None
+    announcement_text: str = link_url # По умолчанию текст - это сама ссылка
+
+    if raw_text:
+        time_match = TIME_REGEX.search(raw_text)
+        if time_match:
+            event_time_str = time_match.group(0)
+            announcement_text = raw_text.replace(time_match.group(0), "").replace(link_url, "").strip()
+            if not announcement_text: # Если после удаления времени и ссылки ничего не осталось
+                announcement_text = link_url
+        else:
+            # Если времени нет, удаляем только ссылку для получения текста
+            announcement_text = raw_text.replace(link_url, "").strip()
+            if not announcement_text:
+                announcement_text = link_url
+
+    # Добавляем ссылку в базу как 'pending'
+    pending_link = await db_add_link(
+        user_id=user_id,
+        username=username,
+        first_name=first_name,
+        last_name=last_name,
+        link_url=link_url,
+        event_time_str=event_time_str,
+        event_time_utc=event_time_utc,
+        announcement_text=announcement_text
+    )
+
+    if not pending_link or not pending_link.id:
+        logger.error(f"Failed to create pending link for URL: {link_url} by user {user_id}")
+        await message.reply("Произошла ошибка при сохранении ссылки. Попробуйте позже.")
+        return
+
+    link_id = pending_link.id
+    logger.info(f"Created pending link ID: {link_id} for user {user_id}. URL: {link_url}")
+
+    # Формируем клавиатуру для выбора чата
+    target_chats = settings.announcement_target_chats
+    if not target_chats:
+        logger.warning(f"No target chats configured for announcements. Link ID {link_id} remains pending.")
+        await message.reply(f"Ссылка {hlink('сохранена', link_url)}, но нет настроенных чатов для публикации. Обратитесь к администратору.")
+        return
+
+    builder = InlineKeyboardBuilder()
+    for chat in target_chats:
+        builder.button(
+            text=chat.name,
+            callback_data=ChatSelectCallback(link_id=link_id, target_chat_id=chat.id)
+        )
+    # Можно добавить кнопку отмены?
+    # builder.button(text="Отмена", callback_data=ChatSelectCallback(action="cancel", link_id=link_id))
+    builder.adjust(1) # По одной кнопке в ряду
+
+    # Отправляем сообщение пользователю с клавиатурой
+    await message.reply(
+        f"Куда опубликовать анонс для ссылки: {hlink(announcement_text or link_url, link_url)}?",
+        reply_markup=builder.as_markup()
+    )

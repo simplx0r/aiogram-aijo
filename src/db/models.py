@@ -17,18 +17,18 @@ class Link(Base):
     __tablename__ = 'links'
 
     id: Mapped[int] = mapped_column(primary_key=True) # PK
-    message_id_in_group: Mapped[Optional[int]] = mapped_column(BigInteger, unique=True, index=True, nullable=True) # ID сообщения с анонсом в группе (может быть NULL)
+    posted_message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True) # ID сообщения в целевом чате
+    posted_chat_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True)    # ID целевого чата
     link_url: Mapped[str] = mapped_column(String, nullable=False)
     announcement_text: Mapped[str] = mapped_column(String)
     added_by_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     added_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now() # Время добавления
     )
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True) # Флаг активности ссылки
-
-    # Новые поля для планировщика
     event_time_str: Mapped[Optional[str]] = mapped_column(String, nullable=True) # Время как ввел пользователь (HH:MM)
     event_time_utc: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True, index=True) # Время события в UTC
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True) # Флаг активности ссылки
+    pending: Mapped[bool] = mapped_column(Boolean, default=True) # True - если ожидает публикации
     reminder_30_sent: Mapped[bool] = mapped_column(Boolean, default=False, index=True) # Флаг 30-минутного напоминания
     reminder_10_sent: Mapped[bool] = mapped_column(Boolean, default=False, index=True) # Флаг 10-минутного напоминания
 
@@ -36,7 +36,7 @@ class Link(Base):
     requests: Mapped[list["Request"]] = relationship(back_populates="link")
 
     def __repr__(self):
-        return f"<Link(id={self.id}, msg_id={self.message_id_in_group}, url='{self.link_url[:20]}...', event_time='{self.event_time_str}', active={self.is_active})>"
+        return f"<Link(id={self.id}, msg_id={self.posted_message_id}, url='{self.link_url[:20]}...', event_time='{self.event_time_str}', active={self.is_active})>"
 
 class Request(Base):
     """Модель для логирования запросов на получение ссылки."""
@@ -48,7 +48,7 @@ class Request(Base):
     requested_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now() # Время запроса
     )
-    link_message_id: Mapped[int] = mapped_column(ForeignKey('links.message_id_in_group')) # Внешний ключ на сообщение
+    link_message_id: Mapped[int] = mapped_column(ForeignKey('links.posted_message_id')) # Внешний ключ на сообщение
 
     # Связь с ссылкой
     link: Mapped["Link"] = relationship(back_populates="requests")
@@ -96,7 +96,7 @@ class GroupMessageLog(Base):
     message_text: Mapped[str] = mapped_column(Text) # Текст сообщения
     # Используем datetime.now(timezone.utc) вместо устаревшего utcnow
     # Оборачиваем в lambda, чтобы функция вызывалась при создании записи, а не при импорте модуля
-    timestamp: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+    timestamp: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(datetime.timezone.utc), index=True)
 
     def __repr__(self):
         return f"<GroupMessageLog(id={self.id}, user_id={self.user_id}, text='{self.message_text[:20]}...', time='{self.timestamp}')>"
