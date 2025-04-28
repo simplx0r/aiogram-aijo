@@ -14,13 +14,6 @@ from aiogram.exceptions import TelegramAPIError
 from src.db.models import Link
 from src.config.config import settings
 from src.bot import bot # Импортируем сам объект бота
-from src.services import (
-    get_link_by_id,
-    update_reminder_status,
-    get_pending_reminder_links
-)
-from src.services.link_service import (get_active_links_with_reminders, # Уже возвращает только is_active=True, pending=False
-                                        update_reminder_status)
 
 # --- Настройки часового пояса ---
 MOSCOW_TZ = pytz.timezone('Europe/Moscow')
@@ -35,7 +28,8 @@ scheduler = AsyncIOScheduler(timezone=MOSCOW_TZ)
 async def send_reminder(link_id: int, minutes_before: int):
     """Отправляет напоминание в основной чат."""
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    from .handlers.callbacks import LinkCallbackFactory
+    from src.utils.callback_data import LinkCallback # Импортируем из utils
+    from src.services import get_link_by_id, update_reminder_status # Отложенный импорт
 
     logging.info(f"Attempting to send {minutes_before}-min reminder for link_id={link_id}")
     link: Optional[Link] = await get_link_by_id(link_id) # Нужна новая функция в db
@@ -64,7 +58,7 @@ async def send_reminder(link_id: int, minutes_before: int):
     try:
         # Создаем клавиатуру с кнопкой "Получить ссылку"
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔗 Получить ссылку", callback_data=LinkCallbackFactory(action="get", link_id=link_id).pack())]
+            [InlineKeyboardButton(text="🔗 Получить ссылку", callback_data=LinkCallback(action="get_link", link_id=link_id).pack())]
         ])
 
         # Пытаемся отправить напоминание как новое сообщение или как ответ на исходное?
@@ -153,6 +147,8 @@ async def schedule_reminders_for_link(link: Link):
 async def load_scheduled_jobs():
     """Загружает и планирует напоминания для активных ссылок при старте бота."""
     logging.info("Loading scheduled jobs for PUBLISHED links...")
+    # Отложенный импорт
+    from src.services import get_active_links_with_reminders
     links = await get_active_links_with_reminders() # Получаем активные и ОПУБЛИКОВАННЫЕ ссылки с временем
     count = 0
     for link in links:

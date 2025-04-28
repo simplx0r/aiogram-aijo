@@ -9,9 +9,11 @@ from sqlalchemy.future import select
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 
 # Модели и сессия
-from src.db.models import Link, User, Request
-from .database import get_session
-from .user_service import get_or_create_user
+from src.db.models import Link, Request # Убрали импорт User
+from src.services.database import get_session
+from src.services.stats_service import increment_interview_count # Импорт для статистики
+# from .user_service import get_or_create_user # Функция не существует
+from src.scheduler import schedule_reminders_for_link # Импорт для планировщика
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +37,16 @@ async def add_link(user_id: int, username: Optional[str], first_name: Optional[s
     )
     async with get_session() as session:
         try:
-            # Проверяем существование пользователя
-            await get_or_create_user(session, user_id, username, first_name, last_name)
+            # TODO: Если нужно обновлять статистику пользователя при добавлении ссылки,
+            # TODO: вызвать функцию из stats_service.py здесь.
+            # await get_or_create_user(session, user_id, username, first_name, last_name) # Эта функция не существует
+
+            # Увеличиваем счетчик собеседований для пользователя
+            stats_updated = await increment_interview_count(user_id=user_id, username=username)
+            if not stats_updated:
+                # Логируем ошибку, но продолжаем создание ссылки
+                logger.error(f"Не удалось обновить статистику собеседований для пользователя {user_id} при добавлении ссылки.")
+
             session.add(new_link)
             await session.flush()  # Получаем ID до коммита
             link_id = new_link.id
