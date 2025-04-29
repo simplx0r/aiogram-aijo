@@ -35,12 +35,18 @@ async def handle_publish_link(query: CallbackQuery, callback_data: ChatSelectCal
         await query.answer(text="Ссылка уже опубликована.")
         return
 
-    # Находим имя чата из настроек для сообщения пользователю
-    target_chat_name = "Unknown Chat"
-    for chat in settings.announcement_target_chats:
-        if chat.id == target_chat_id:
-            target_chat_name = chat.name
-            break
+    # Находим имя чата по ID из настроек
+    target_chats = settings.announcement_target_chats
+    chat_name = "Unknown Chat"
+    if target_chats and isinstance(target_chats, dict):
+        # Правильная итерация по словарю
+        for name, chat_id_in_settings in target_chats.items():
+            if chat_id_in_settings == target_chat_id:
+                chat_name = name
+                break
+    else:
+        logger.warning(f"Target chats dictionary is missing or invalid in settings.")
+        await query.answer("Ошибка конфигурации чатов.", show_alert=True)
 
     # 2. Формируем сообщение для анонса
     message_text, reply_markup = format_link_message_with_button(link)
@@ -67,7 +73,7 @@ async def handle_publish_link(query: CallbackQuery, callback_data: ChatSelectCal
             # 5. Сообщаем пользователю об успехе, редактируя исходное сообщение с кнопками
             chat_link = f"https://t.me/c/{str(target_chat_id)[4:]}/{sent_message.message_id}" # Генерируем ссылку на сообщение
             await query.message.edit_text(
-                f"✅ Анонс успешно опубликован в чат '{target_chat_name}'! ({hlink('Перейти', chat_link)})"
+                f"✅ Анонс успешно опубликован в чат '{chat_name}'! ({hlink('Перейти', chat_link)})"
             )
             await query.answer("Опубликовано!")
         else:
@@ -83,7 +89,7 @@ async def handle_publish_link(query: CallbackQuery, callback_data: ChatSelectCal
 
     except TelegramAPIError as e:
         logging.error(f"Failed to send announcement to chat {target_chat_id} for link {link_id}: {e}", exc_info=True)
-        await query.message.edit_text(f"❌ Не удалось отправить анонс в чат '{target_chat_name}'.\nОшибка: {e.message}. \nВозможно, у бота нет прав на отправку сообщений в этот чат.")
+        await query.message.edit_text(f"❌ Не удалось отправить анонс в чат '{chat_name}'.\nОшибка: {e.message}. \nВозможно, у бота нет прав на отправку сообщений в этот чат.")
         await query.answer("Ошибка отправки анонса.", show_alert=True)
     except Exception as e:
         logging.error(f"Unexpected error during publishing link {link_id} to chat {target_chat_id}: {e}", exc_info=True)
