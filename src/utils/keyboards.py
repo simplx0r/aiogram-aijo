@@ -1,19 +1,10 @@
-from aiogram.filters.callback_data import CallbackData
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram import Bot
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.utils.markdown import hlink
 # Повторно исправляем импорт, чтобы убедиться, что он содержит только существующие классы
-from .callbacks import PublishLinkCallbackData, ReminderCallbackData, UserStatsCallbackData, LinkCallbackData
+from .callback_data import ChatSelectCallback, LinkCallbackFactory
 from src.db.models import Link # Используем напрямую модель Link
 from src.config import settings
-from typing import Optional, Dict
-
-class LinkCallbackFactory(CallbackData, prefix="link_action"):
-    """Фабрика данных для колбеков, связанных со ссылками."""
-    action: str # Действие: 'get'
-    link_id: int # ID ссылки из базы данных
-
 
 def get_link_keyboard(link_id: int) -> InlineKeyboardMarkup:
     """Создает клавиатуру с кнопкой 'Получить ссылку' для указанного link_id."""
@@ -21,7 +12,7 @@ def get_link_keyboard(link_id: int) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(
                 text="🔗 Получить ссылку",
-                callback_data=LinkCallbackData(action="get", link_id=link_id).pack()
+                callback_data=LinkCallbackFactory(action="get", link_id=link_id).pack()
             )
         ]
     ])
@@ -52,10 +43,10 @@ def format_link_message_with_button(link: Link) -> tuple[str, InlineKeyboardMark
     # Или используем стандартный текст всегда?
     # Пока используем стандартный текст.
 
-    # Используем LinkCallback для кнопки, передавая ID основной записи Link
+    # Используем LinkCallbackFactory для кнопки, передавая ID основной записи Link
     builder.button(
         text=button_text,
-        callback_data=LinkCallbackData(action="get_link", link_id=link.id).pack()
+        callback_data=LinkCallbackFactory(action="get", link_id=link.id).pack()
     )
     reply_markup = builder.as_markup()
 
@@ -78,8 +69,9 @@ def create_publish_keyboard(link_id: int) -> InlineKeyboardMarkup:
 
     # Добавляем кнопки для каждого чата из настроек
     for chat_name, chat_id in target_chats.items():
-        callback_data = PublishLinkCallbackData(
-            link_id=link_id, chat_id=chat_id
+        # Используем ChatSelectCallback
+        callback_data = ChatSelectCallback(
+            link_id=link_id, target_chat_id=chat_id
         )
         builder.button(
             text=f"✅ Опубликовать в '{chat_name}'",
@@ -87,6 +79,6 @@ def create_publish_keyboard(link_id: int) -> InlineKeyboardMarkup:
         )
 
     # Можно добавить кнопку отмены
-    builder.button(text="❌ Отмена", callback_data=LinkCallbackData(action="cancel_publish", link_id=link_id).pack())
+    builder.button(text="❌ Отмена", callback_data=LinkCallbackFactory(action="cancel_publish", link_id=link_id).pack())
     builder.adjust(1) # По одной кнопке в ряду
     return builder.as_markup()

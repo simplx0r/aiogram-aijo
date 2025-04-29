@@ -29,21 +29,3 @@ async def log_link_request(user_id: int, username: Optional[str], link_id: int) 
     except Exception as e:
         logging.exception(f"Unexpected error logging link request for user {user_id}, link_id {link_id}: {e}")
         return False
-
-async def get_all_requests() -> List[Request]:
-    """Получает все записи из лога запросов."""
-    async with get_session() as session:
-        try:
-            # Добавим сортировку по убыванию времени
-            stmt = select(Request).order_by(Request.requested_at.desc()) # Используем `requested_at` если оно есть в модели Request
-            # Если поля `requested_at` нет, а есть `timestamp`, используйте его:
-            # stmt = select(Request).order_by(Request.timestamp.desc())
-            result = await session.execute(stmt)
-            requests = result.scalars().all()
-            return list(requests)
-        except SQLAlchemyError as e:
-            logging.error(f"Database error getting all requests: {e}")
-            return []
-        except Exception as e:
-            logging.exception(f"Unexpected error getting all requests: {e}")
-            return []

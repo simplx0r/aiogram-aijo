@@ -87,22 +87,3 @@ class UserStats(Base):
 
     def __repr__(self):
         return f"<UserStats(user_id={self.user_id}, interviews={self.interview_count}, messages={self.message_count})>"
-
-# Новая модель для логирования сообщений из группы
-class GroupMessageLog(Base):
-    __tablename__ = 'group_message_logs'
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(index=True) # ID пользователя Telegram
-    username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # Юзернейм (может отсутствовать)
-    full_name: Mapped[str] = mapped_column(String(200)) # Полное имя пользователя
-    message_text: Mapped[str] = mapped_column(Text) # Текст сообщения
-    # Используем datetime.now(timezone.utc) вместо устаревшего utcnow
-    # Оборачиваем в lambda, чтобы функция вызывалась при создании записи, а не при импорте модуля
-    timestamp: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(datetime.timezone.utc), index=True)
-
-    def __repr__(self):
-        return f"<GroupMessageLog(id={self.id}, user_id={self.user_id}, text='{self.message_text[:20]}...', time='{self.timestamp}')>"
-
-# Импортируем datetime и timezone из модуля datetime
-from datetime import datetime, timezone

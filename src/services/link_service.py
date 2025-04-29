@@ -9,11 +9,9 @@ from sqlalchemy.future import select
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 
 # Модели и сессия
-from src.db.models import Link, Request # Убрали импорт User
+from src.db.models import Link # Убрали импорт Request
 from src.services.database import get_session
 from src.services.stats_service import increment_interview_count # Импорт для статистики
-# from .user_service import get_or_create_user # Функция не существует
-from src.scheduler import schedule_reminders_for_link # Импорт для планировщика
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +37,6 @@ async def add_link(user_id: int, username: Optional[str], first_name: Optional[s
         try:
             # TODO: Если нужно обновлять статистику пользователя при добавлении ссылки,
             # TODO: вызвать функцию из stats_service.py здесь.
-            # await get_or_create_user(session, user_id, username, first_name, last_name) # Эта функция не существует
 
             # Увеличиваем счетчик собеседований для пользователя
             stats_updated = await increment_interview_count(user_id=user_id, username=username)
@@ -203,27 +200,6 @@ async def get_active_links_with_reminders() -> list[Link]:
         )
         links = result.scalars().all()
         return list(links)
-
-async def delete_link(link_id: int) -> bool:
-    """Удаляет ссылку из базы данных по ID."""
-    try:
-        async with get_session() as session:
-            stmt = delete(Link).where(Link.id == link_id)
-            result = await session.execute(stmt)
-            if result.rowcount > 0:
-                logger.info(f"Deleted link with ID {link_id}")
-                # TODO: Подумать о каскадном удалении или удалении связанных Request записей здесь,
-                # если cascade='delete' не настроен в модели Link.
-                return True
-            else:
-                logger.warning(f"Attempted to delete non-existent link_id {link_id}")
-                return False
-    except SQLAlchemyError as e:
-        logger.error(f"Database error deleting link ID {link_id}: {e}")
-        return False
-    except Exception as e:
-        logger.exception(f"Unexpected error deleting link ID {link_id}: {e}")
-        return False
 
 async def mark_link_published(link_id: int, message_id: int, chat_id: int) -> bool:
     """Отмечает ссылку как опубликованную, устанавливая pending=False, posted_message_id и posted_chat_id."""

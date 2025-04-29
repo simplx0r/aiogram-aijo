@@ -13,8 +13,8 @@ from aiogram.utils.markdown import hlink
 from src.config.config import settings
 from src.utils.constants import URL_REGEX, DATE_REGEX, TIME_REGEX
 from src.utils.date_parser import parse_datetime_string, DateTimeParseError, PastDateTimeError
-from src.utils.callback_data import ChatSelectCallback # Исправлен путь импорта
-from src.utils.keyboards import LinkCallbackFactory, get_link_keyboard, create_publish_keyboard # Добавляем импорт клавиатуры
+from src.utils.callback_data import ChatSelectCallback, LinkCallbackFactory # Исправлен путь импорта LinkCallbackFactory
+from src.utils.keyboards import get_link_keyboard, create_publish_keyboard # Убираем импорт LinkCallbackFactory отсюда
 from src.utils.misc import get_random_phrase
 from src.db.models import Link
 
@@ -31,6 +31,9 @@ from src.services.stats_service import (
     increment_interview_count as db_increment_interview_count
 )
 
+# Инициализация роутера для этого модуля
+router = Router()
+
 # --- НОВОЕ: Структура для аргументов и ошибка парсинга --- #
 class AddLinkArgs(NamedTuple):
     link_url: str
@@ -42,8 +45,6 @@ class ArgumentParsingError(ValueError):
     """Исключение для ошибок во время парсинга аргументов команды."""
     pass
 # --- КОНЕЦ НОВОГО --- #
-
-# router = Router()
 
 # --- Вспомогательная функция для парсинга аргументов --- #
 def _parse_addlink_args(args_str: Optional[str]) -> AddLinkArgs:
@@ -174,158 +175,13 @@ async def _send_announcement_to_group(bot: Bot, link: Link, target_chat_id: int)
         return None
 
 
-# --- Вспомогательная функция для отправки ссылки пользователю --- #
-async def _send_link_to_user(bot: Bot, user_id: int, link_url: str, link_id: int) -> tuple[bool, str]:
-    """Отправляет ссылку личным сообщением пользователю.
-
-    Args:
-        bot: Экземпляр бота.
-        user_id: ID пользователя, которому отправляем.
-        link_url: URL ссылки для отправки.
-        link_id: ID ссылки (для логирования).
-
-    Returns:
-        tuple[bool, str]: Кортеж (success: bool, message: str).
-                        success=True, message="Ссылка отправлена..."
-                        success=False, message="Ошибка: Не могу отправить..."
-    """
-    # Получаем случайную фразу
-    random_phrase = get_random_phrase()
-    try:
-        await bot.send_message(
-            chat_id=user_id,
-            text=f"{random_phrase}\n{link_url}",
-            disable_web_page_preview=False # Включаем превью для ЛС
-        )
-        logging.info(f"Sent link {link_id} to user {user_id}")
-        return True, "Ссылка отправлена вам в личные сообщения!"
-    except TelegramBadRequest as e:
-        if "bot was blocked by the user" in str(e) or "user not found" in str(e) or "chat not found" in str(e):
-            logging.warning(f"Cannot send link {link_id} to user {user_id}: Bot blocked or chat not started.")
-            return False, "Не могу отправить вам ссылку. Пожалуйста, начните диалог со мной (напишите /start) и попробуйте снова."
-        else:
-            logging.error(f"Telegram error sending link {link_id} to user {user_id}: {e}")
-            return False, "Произошла ошибка при отправке ссылки."
-    except Exception as e:
-        logging.exception(f"Unexpected error sending link {link_id} to user {user_id}: {e}")
-        return False, "Произошла непредвиденная ошибка."
-
-
 # --- Обработчик команды добавления ссылки --- #
 
-router = Router()
-
+# Обрабатывает команду /addlink или пересылку сообщения для добавления ссылки.
+#     Создает 'pending' ссылку и отправляет пользователю клавиатуру для выбора чата публикации.
 @router.message(Command("addlink"))
-async def add_link(message: Message, command: CommandObject, bot: Bot):
-    """Обработчик команды /addlink."""
-    # --- Парсинг аргументов вынесен --- #
-    try:
-        parsed_args = _parse_addlink_args(command.args)
-    except ArgumentParsingError as e:
-        await message.answer(str(e))
-        return
-
-    # --- Использование разобранных аргументов --- #
-    link_url = parsed_args.link_url
-    date_str = parsed_args.date_str
-    time_str = parsed_args.time_str
-    announcement_text = parsed_args.announcement_text
-
-    # --- Логика обработки даты/времени --- #
-    event_time_utc = None
-    event_time_str = None
-    if date_str and time_str: # Проверка уже сделана в парсере
-        try:
-            event_time_utc = parse_datetime_string(date_str, time_str)
-            event_time_str = f"{date_str} {time_str}"
-        except DateTimeParseError:
-            await message.answer("Неверный формат даты или времени. Используйте ДД.ММ(.ГГГГ) и ЧЧ:ММ.")
-            return
-        except PastDateTimeError:
-            await message.answer("Дата и время события не могут быть в прошлом.")
-            return
-        except Exception as e:
-            logging.error(f"Error parsing date/time '{date_str} {time_str}': {e}")
-            await message.answer("Произошла ошибка при обработке даты и времени.")
-            return
-
-    # --- Взаимодействие с БД --- #
-    added_link = await db_add_link(
-        user_id=message.from_user.id,
-        username=message.from_user.username,
-        first_name=message.from_user.first_name,
-        last_name=message.from_user.last_name,
-        link_url=link_url,
-        announcement_text=announcement_text,
-        event_time_str=event_time_str,
-        event_time_utc=event_time_utc
-    )
-
-    if not added_link or added_link.id is None:
-        await message.answer("Не удалось сохранить ссылку. Попробуйте позже.")
-        return
-
-    # --- Отправка сообщения в группу вынесена --- #
-    # send_success = await _send_announcement_to_group(bot, added_link)
-
-    # Добавляем логгер
-    import logging
-    logger = logging.getLogger(__name__)
-
-    logger.info(f"Пользователь {message.from_user.id} добавил ожидающую ссылку ID: {added_link.id}")
-    # Отправляем клавиатуру для выбора чата
-    publish_keyboard = create_publish_keyboard(added_link.id)
-    if publish_keyboard:
-        await message.answer(
-            f"✅ Ссылка на '{link_url}' добавлена и ожидает публикации.\n\n"
-            f"Выберите чат для анонса:",
-            reply_markup=publish_keyboard
-        )
-    else:
-        # Если чаты не настроены, сообщаем об этом
-        logger.warning(f"Не удалось создать клавиатуру публикации для link_id {added_link.id}: ANNOUNCEMENT_TARGET_CHATS не настроен.")
-        await message.answer(
-            f"✅ Ссылка на '{link_url}' добавлена и ожидает публикации.\n\n"
-            f"Не удалось найти настроенные чаты для публикации. Обратитесь к администратору."
-        )
-        # Тут можно автоматически опубликовать в дефолтный чат, если он есть, или оставить pending
-        # Пока просто оставляем pending
-
-
-# --- Обработчик нажатия кнопки "Получить ссылку" --- #
-
-@router.callback_query(LinkCallbackFactory.filter(F.action == "get"))
-async def get_link(query: CallbackQuery, callback_data: LinkCallbackFactory, bot: Bot):
-    """Обработчик нажатия кнопки получения ссылки."""
-    link_id = callback_data.link_id
-    user_id = query.from_user.id
-    username = query.from_user.username or query.from_user.full_name
-
-    logging.info(f"User {user_id} ({username}) requested link_id {link_id}")
-
-    # Логируем запрос в БД и обновляем статистику
-    await db_log_link_request(user_id, username, link_id)
-    await db_increment_interview_count(user_id, username)
-
-    # Получаем ссылку из БД
-    link_record = await db_get_link_by_id(link_id)
-
-    if link_record:
-        # --- Отправка ссылки вынесена --- #
-        send_success, message_text = await _send_link_to_user(bot, user_id, link_record.link_url, link_id)
-
-        # Отвечаем на колбек
-        await query.answer(text=message_text, show_alert=not send_success) # Показываем alert при ошибке
-
-    else:
-        logging.warning(f"User {user_id} requested non-existent link_id {link_id}")
-        await query.answer(text="Извините, эта ссылка больше не доступна.", show_alert=True)
-
-
-# --- Обработчик команды добавления ссылки --- #
-
-@router.message(Command("addlink"))
-async def handle_add_link(message: Message, command: Optional[CommandObject] = None, bot: Optional[Bot] = None):
+@router.message(F.text & F.text.regexp(URL_REGEX)) # Добавлен обработчик для сообщений с URL
+async def handle_add_link(message: Message, command: Optional[CommandObject] = None): 
     """Обрабатывает команду /addlink или пересылку сообщения для добавления ссылки.
     Создает 'pending' ссылку и отправляет пользователю клавиатуру для выбора чата публикации.
     """
@@ -334,11 +190,12 @@ async def handle_add_link(message: Message, command: Optional[CommandObject] = N
         return
 
     user_id = message.from_user.id
-    username = message.from_user.username
-    first_name = message.from_user.first_name
-    last_name = message.from_user.last_name
+    username = message.from_user.username # Возвращаем присваивание
+    first_name = message.from_user.first_name # Возвращаем присваивание
+    last_name = message.from_user.last_name # Добавляем присваивание last_name
+    user_identifier = username or first_name or str(user_id) # Обновляем user_identifier для полноты
 
-    logger.info(f"Handling link add request from user {user_id} ({username or first_name})")
+    logger.info(f"Handling link add request from user {user_id} ({user_identifier})")
 
     link_url: Optional[str] = None
     raw_text: Optional[str] = None
@@ -385,9 +242,9 @@ async def handle_add_link(message: Message, command: Optional[CommandObject] = N
     # Добавляем ссылку в базу как 'pending'
     pending_link = await db_add_link(
         user_id=user_id,
-        username=username,
-        first_name=first_name,
-        last_name=last_name,
+        username=username, # Используем переменную
+        first_name=first_name, # Используем переменную
+        last_name=last_name, # Используем переменную
         link_url=link_url,
         event_time_str=event_time_str,
         event_time_utc=event_time_utc,

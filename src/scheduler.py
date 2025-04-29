@@ -6,7 +6,7 @@ from typing import Optional
 import pytz # Для работы с часовыми поясами
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.base import JobLookupError
-from aiogram import Bot # Для отправки сообщений
+# from aiogram import Bot # Импорт не используется, т.к. импортируем экземпляр bot
 from aiogram.utils.markdown import hbold
 from aiogram.exceptions import TelegramAPIError
 

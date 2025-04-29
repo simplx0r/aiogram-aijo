@@ -11,8 +11,7 @@ from src.config import load_config # Убрали импорт settings, имп�
 from src.handlers import common as common_handlers
 from src.handlers import links as link_handlers
 from src.handlers import stats as stats_handlers
-from src.handlers import callbacks, forwarded, group_messages # Импортируем все роутеры
-from src.utils import callbacks as callback_handlers # Импортируем новый роутер для колбэков
+from src.handlers import callbacks, forwarded, group_messages, link_callbacks # Импортируем все роутеры
 from src.services.database import async_init_db
 from src.bot import bot # Используем наш экземпляр бота
 from src import scheduler # Импортируем наш планировщик
@@ -35,8 +34,6 @@ async def on_startup(dispatcher: Dispatcher, bot: Bot):
     # Импортируем модели ДО инициализации БД, чтобы Base.metadata был полным
     from src.db import models # Явный импорт для регистрации моделей
     logger.info("DB models imported.")
-    # Загрузка конфигурации (НОВОЕ)
-    settings = load_config()
     # Инициализируем базу данных
     await async_init_db()
     # Загрузка и планирование ожидающих напоминаний
@@ -65,9 +62,6 @@ async def main():
     
     logger.info("Configuring bot...")
 
-    # Загрузка конфигурации (НОВОЕ)
-    settings = load_config()
-    
     # --- Регистрация Middleware --- 
     # Важно регистрировать middleware ДО роутеров
     dp.update.outer_middleware(LoggingMiddleware())
@@ -78,7 +72,7 @@ async def main():
     dp.include_router(link_handlers.router)
     dp.include_router(stats_handlers.router)
     dp.include_router(callbacks.router)
-    dp.include_router(callback_handlers.router) # Регистрируем роутер колбэков
+    dp.include_router(link_callbacks.router)
     dp.include_router(forwarded.router)
     dp.include_router(group_messages.router)
 

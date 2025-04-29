@@ -1,10 +1,10 @@
 import logging
 import os
-import json
+# import json # Не используется
 from typing import Optional, Dict
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import BaseModel, SecretStr, Field, ValidationError
+from pydantic import SecretStr, Field, ValidationError # Убрали BaseModel
 
 
 class Settings(BaseSettings):

@@ -2,7 +2,7 @@
 import logging
 from aiogram import Router, F, types
 from ..config.config import settings 
-from ..services import log_group_message
+from ..services import log_group_message_stats
 
 router = Router()
 
@@ -22,7 +22,7 @@ async def log_incoming_text_message(message: types.Message):
     logging.debug(f"Received text message in group {settings.main_group_id} from user {user.id}.")
 
     try:
-        await log_group_message(
+        await log_group_message_stats(
             user_id=user.id,
             username=user.username,
             full_name=user.full_name,
@@ -46,7 +46,7 @@ async def log_edited_text_message(message: types.Message):
     logging.debug(f"Received edited text message in group {settings.main_group_id} from user {user.id}.")
 
     try:
-        await log_group_message(
+        await log_group_message_stats(
             user_id=user.id,
             username=user.username,
             full_name=user.full_name,

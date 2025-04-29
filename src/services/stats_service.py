@@ -113,36 +113,6 @@ async def increment_interview_count(user_id: int, username: Optional[str]) -> bo
 
 # --- Функции для получения статистики --- #
 
-async def get_total_message_count() -> int:
-    """Возвращает общее количество сообщений в таблице group_messages."""
-    async with get_session() as session:
-        try:
-            stmt = select(func.count(GroupMessage.id))
-            result = await session.execute(stmt)
-            count = result.scalar_one_or_none() or 0
-            return count
-        except SQLAlchemyError as e:
-            logging.error(f"Database error getting total message count: {e}")
-            return 0
-        except Exception as e:
-            logging.exception(f"Unexpected error getting total message count: {e}")
-            return 0
-
-async def get_total_user_count() -> int:
-    """Возвращает общее количество уникальных пользователей в таблице user_stats."""
-    async with get_session() as session:
-        try:
-            stmt = select(func.count(UserStats.user_id))
-            result = await session.execute(stmt)
-            count = result.scalar_one_or_none() or 0
-            return count
-        except SQLAlchemyError as e:
-            logging.error(f"Database error getting total user count: {e}")
-            return 0
-        except Exception as e:
-            logging.exception(f"Unexpected error getting total user count: {e}")
-            return 0
-
 async def get_top_users_by_messages(limit: int = 5) -> List[UserStats]:
     """Возвращает топ пользователей по количеству сообщений."""
     async with get_session() as session:
