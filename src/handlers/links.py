@@ -9,7 +9,6 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import Message, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.utils.formatting import Text
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.utils.markdown import hlink
 
 # Утилиты, константы и конфигурация
@@ -262,25 +261,12 @@ async def handle_add_link(message: Message, command: Optional[CommandObject] = N
     link_id = pending_link.id
     logger.info(f"Created pending link ID: {link_id} for user {user_id}. URL: {link_url}")
 
-    # Формируем клавиатуру для выбора чата
-    target_chats = settings.announcement_target_chats
-    if not target_chats:
-        logger.warning(f"No target chats configured for announcements. Link ID {link_id} remains pending.")
-        await message.reply(f"Ссылка {hlink('сохранена', link_url)}, но нет настроенных чатов для публикации. Обратитесь к администратору.")
-        return
+    # Используем существующую функцию create_publish_keyboard
+    reply_markup = create_publish_keyboard(link_id)
 
-    builder = InlineKeyboardBuilder()
-    for chat in target_chats:
-        builder.button(
-            text=chat.name,
-            callback_data=ChatSelectCallback(link_id=link_id, target_chat_id=chat.id)
-        )
-    # Можно добавить кнопку отмены?
-    # builder.button(text="Отмена", callback_data=ChatSelectCallback(action="cancel", link_id=link_id))
-    builder.adjust(1) # По одной кнопке в ряду
-
-    # Отправляем сообщение пользователю с клавиатурой
+    # Отправляем сообщение пользователю с кнопками выбора чата
     await message.reply(
-        f"Куда опубликовать анонс для ссылки: {hlink(announcement_text or link_url, link_url)}?",
-        reply_markup=builder.as_markup()
+        f"Куда опубликовать анонс для ссылки: {hlink('Ссылка', link_url)}?",
+        reply_markup=reply_markup,
+        disable_web_page_preview=True
     )
