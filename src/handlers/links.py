@@ -2,7 +2,7 @@
 import logging
 import asyncio
 import re
-from typing import Optional
+from typing import Optional, NamedTuple
 from loguru import logger # Added logger import
 from aiogram import Bot, Router, F, types
 from aiogram.filters import Command, CommandObject
