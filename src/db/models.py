@@ -36,7 +36,7 @@ class Link(Base):
     reminder_10_sent: Mapped[bool] = mapped_column(Boolean, default=False, index=True) # Флаг 10-минутного напоминания
 
     # Связь с запросами (если нужна)
-    requests: Mapped[list["Request"]] = relationship(back_populates="link")
+    requests: Mapped[list["Request"]] = relationship(back_populates="link", foreign_keys="[Request.link_id]") # Указываем FK явно
 
     def __repr__(self):
         return f"<Link(id={self.id}, msg_id={self.posted_message_id}, url='{self.link_url[:20]}...', event_time='{self.event_time_str}', active={self.is_active})>"
@@ -51,13 +51,16 @@ class Request(Base):
     requested_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now() # Время запроса
     )
-    link_message_id: Mapped[int] = mapped_column(ForeignKey('links.posted_message_id')) # Внешний ключ на сообщение
+    # Добавляем ForeignKey на links.id
+    link_id: Mapped[int] = mapped_column(ForeignKey('links.id'), nullable=False, index=True)
+    # Делаем ForeignKey на сообщение необязательным
+    link_message_id: Mapped[Optional[int]] = mapped_column(ForeignKey('links.posted_message_id'), nullable=True)
 
-    # Связь с ссылкой
-    link: Mapped["Link"] = relationship(back_populates="requests")
+    # Связь с ссылкой по link_id
+    link: Mapped["Link"] = relationship(foreign_keys=[link_id], back_populates="requests") # Восстанавливаем back_populates
 
     def __repr__(self):
-        return f"<Request(id={self.id}, user_id={self.user_id}, link_msg_id={self.link_message_id}, time='{self.requested_at}')>"
+        return f"<Request(id={self.id}, user_id={self.user_id}, link_id={self.link_id}, link_msg_id={self.link_message_id}, time='{self.requested_at}')>"
 
 class GroupMessage(Base):
     __tablename__ = 'group_messages'

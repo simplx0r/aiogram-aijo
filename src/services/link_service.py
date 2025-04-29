@@ -9,7 +9,7 @@ from sqlalchemy.future import select
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 
 # Модели и сессия
-from src.db.models import Link # Убрали импорт Request
+from src.db.models import Link, Request # Добавили импорт Request
 from src.services.database import get_session
 from src.services.stats_service import increment_interview_count # Импорт для статистики
 
@@ -230,3 +230,33 @@ async def mark_link_published(link_id: int, message_id: int, chat_id: int) -> bo
     except Exception as e:
         logger.exception(f"Unexpected error marking link {link_id} as published: {e}")
         return False
+
+# --- Функции для работы с Request (логирование) --- #
+
+async def log_link_request(user_id: int, username: Optional[str], link_id: int) -> bool:
+    """Логирует запрос на получение ссылки в таблицу requests."""
+    new_request = Request(
+        user_id=user_id,
+        username=username,
+        link_id=link_id # Используем поле link_id, которое мы добавили в модель
+        # link_message_id остается None по умолчанию
+    )
+    async with get_session() as session:
+        try:
+            session.add(new_request)
+            await session.commit()
+            logger.info(f"Logged link request: User {user_id} requested link_id {link_id}")
+            return True
+        except IntegrityError as e:
+            await session.rollback()
+            # Может возникнуть, если link_id не существует (хотя проверка должна быть раньше)
+            logger.error(f"Integrity error logging link request for user {user_id}, link_id {link_id}: {e}")
+            return False
+        except SQLAlchemyError as e:
+            await session.rollback()
+            logger.error(f"Database error logging link request for user {user_id}, link_id {link_id}: {e}")
+            return False
+        except Exception as e:
+            await session.rollback()
+            logger.exception(f"Unexpected error logging link request for user {user_id}, link_id {link_id}: {e}")
+            return False

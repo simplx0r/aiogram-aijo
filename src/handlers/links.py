@@ -10,28 +10,24 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.utils.formatting import Text
 from aiogram.utils.markdown import hlink
+from aiogram.enums import ParseMode
 
 # Утилиты, константы и конфигурация
 from src.config.config import settings
-from src.utils.constants import URL_REGEX, DATE_REGEX, TIME_REGEX
+from src.utils.constants import URL_REGEX, DATE_REGEX, TIME_REGEX, DEFAULT_TZ
 from src.utils.date_parser import parse_datetime_string, DateTimeParseError, PastDateTimeError
 from src.utils.callback_data import ChatSelectCallback, LinkCallbackFactory # Исправлен путь импорта LinkCallbackFactory
-from src.utils.keyboards import get_link_keyboard, create_publish_keyboard # Убираем импорт LinkCallbackFactory отсюда
+from src.utils.keyboards import get_link_keyboard, create_publish_keyboard # Убеждаемся, что импорт отсюда
 from src.utils.misc import get_random_phrase
 from src.db.models import Link
-
-# Сервисы БД
-from src.services.link_service import (
-    add_link as db_add_link,
-    update_link_message_id as db_update_link_message_id,
-    get_link_by_id as db_get_link_by_id
-)
+from src.services.link_service import add_link as db_add_link
 from src.services.request_log_service import (
     log_link_request as db_log_link_request
 )
 from src.services.stats_service import (
     increment_interview_count as db_increment_interview_count
 )
+from src.exceptions import ArgumentParsingError
 
 # Инициализация роутера для этого модуля
 router = Router()
@@ -187,79 +183,70 @@ async def handle_add_link(message: Message, command: Optional[CommandObject] = N
     """Обрабатывает команду /addlink или пересылку сообщения для добавления ссылки.
     Создает 'pending' ссылку и отправляет пользователю клавиатуру для выбора чата публикации.
     """
-    if not message.from_user:
-        logger.warning("Received /addlink command without user info.")
+    user = message.from_user
+    logger.info(f"Received /addlink from user {user.id if user else 'unknown'} with args: {command.args if command else 'None'}")
+
+    if not command or not command.args:
+        await message.reply(
+            "Пожалуйста, укажите ссылку и опционально дату/время и текст анонса.\n"
+            "Пример: `/addlink https://example.com 15.05 10:30 Текст анонса`",
+            parse_mode=types.ParseMode.MARKDOWN
+        )
         return
 
-    user_id = message.from_user.id
-    username = message.from_user.username # Возвращаем присваивание
-    first_name = message.from_user.first_name # Возвращаем присваивание
-    last_name = message.from_user.last_name # Добавляем присваивание last_name
-    user_identifier = username or first_name or str(user_id) # Обновляем user_identifier для полноты
+    args_str = command.args # Используем command.args вместо message.text
 
-    logger.info(f"Handling link add request from user {user_id} ({user_identifier})")
-
-    link_url: Optional[str] = None
-    raw_text: Optional[str] = None
-
-    if message.text:
-        link_url_match = URL_REGEX.search(message.text)
-        link_url = link_url_match.group(0) if link_url_match else None
-        raw_text = message.text # Весь текст для дальнейшего парсинга времени и описания
-    elif message.forward_from or message.forward_from_chat:
-        if message.forward_from:
-            logger.info(f"Received forwarded message from user {message.forward_from.id}")
-        elif message.forward_from_chat:
-            logger.info(f"Received forwarded message from chat {message.forward_from_chat.id}")
-        if message.forward_date:
-            logger.info(f"Forwarded message date: {message.forward_date}")
-        if message.text:
-            link_url_match = URL_REGEX.search(message.text)
-            link_url = link_url_match.group(0) if link_url_match else None
-            raw_text = message.text # Весь текст для дальнейшего парсинга времени и описания
-
-    if not link_url:
-        logger.warning(f"No link found in message from user {message.from_user.id}")
-        await message.reply("Не удалось найти ссылку в вашем сообщении.")
+    try:
+        parsed_args: AddLinkArgs = _parse_addlink_args(args_str)
+    except ValueError as e:
+        await message.reply(f"Ошибка парсинга аргументов: {e}")
         return
 
-    # Извлекаем время и описание
+    link_url = parsed_args.link_url
+    announcement_text = parsed_args.announcement_text
+
+    # Обработка времени
     event_time_str: Optional[str] = None
     event_time_utc: Optional[datetime] = None
-    announcement_text: str = link_url # По умолчанию текст - это сама ссылка
+    if parsed_args.date_str and parsed_args.time_str:
+        event_time_str = f"{parsed_args.date_str} {parsed_args.time_str}"
+        try:
+            # Создаем datetime объект с указанной таймзоной
+            local_dt = DEFAULT_TZ.localize(datetime.strptime(event_time_str, "%d.%m %H:%M"))
+            # Конвертируем в UTC
+            event_time_utc = local_dt.astimezone(pytz.utc)
+            logger.info(f"Parsed event time: {event_time_str} (local) -> {event_time_utc} (UTC)")
+        except ValueError:
+            logger.warning(f"Could not parse date/time string: {event_time_str}")
+            # Ошибка парсинга, но парсер аргументов уже должен был ее отловить.
+            # На всякий случай, оставляем время пустым.
+            event_time_str = None
+            event_time_utc = None
+        except Exception as e:
+            logger.error(f"Unexpected error parsing date/time: {e}")
+            event_time_str = None
+            event_time_utc = None
 
-    if raw_text:
-        time_match = TIME_REGEX.search(raw_text)
-        if time_match:
-            event_time_str = time_match.group(0)
-            announcement_text = raw_text.replace(time_match.group(0), "").replace(link_url, "").strip()
-            if not announcement_text: # Если после удаления времени и ссылки ничего не осталось
-                announcement_text = link_url
-        else:
-            # Если времени нет, удаляем только ссылку для получения текста
-            announcement_text = raw_text.replace(link_url, "").strip()
-            if not announcement_text:
-                announcement_text = link_url
 
     # Добавляем ссылку в базу как 'pending'
     pending_link = await db_add_link(
-        user_id=user_id,
-        username=username, # Используем переменную
-        first_name=first_name, # Используем переменную
-        last_name=last_name, # Используем переменную
+        user_id=user.id,
+        username=user.username,
+        first_name=user.first_name,
+        last_name=user.last_name,
         link_url=link_url,
-        event_time_str=event_time_str,
-        event_time_utc=event_time_utc,
+        event_time_str=event_time_str, # Передаем объединенную строку или None
+        event_time_utc=event_time_utc, # Передаем UTC время или None
         announcement_text=announcement_text
     )
 
     if not pending_link or not pending_link.id:
-        logger.error(f"Failed to create pending link for URL: {link_url} by user {user_id}")
+        logger.error(f"Failed to create pending link for URL: {link_url} by user {user.id}")
         await message.reply("Произошла ошибка при сохранении ссылки. Попробуйте позже.")
         return
 
     link_id = pending_link.id
-    logger.info(f"Created pending link ID: {link_id} for user {user_id}. URL: {link_url}")
+    logger.info(f"Created pending link ID: {link_id} for user {user.id}. URL: {link_url}")
 
     # Используем существующую функцию create_publish_keyboard
     reply_markup = create_publish_keyboard(link_id)

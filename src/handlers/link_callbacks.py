@@ -5,9 +5,8 @@ from aiogram.types import CallbackQuery
 
 # Импорты для обработчика
 from src.utils.callback_data import LinkCallbackFactory
-from src.services.request_log_service import log_link_request as db_log_link_request
+from src.services.link_service import log_link_request as db_log_link_request, get_link_by_id as db_get_link_by_id, publish_link
 from src.services.stats_service import increment_interview_count as db_increment_interview_count
-from src.services.link_service import get_link_by_id as db_get_link_by_id
 from src.utils.messaging import send_link_to_user # Импорт из нового файла
 
 router = Router() # Создаем новый роутер специально для этих колбэков

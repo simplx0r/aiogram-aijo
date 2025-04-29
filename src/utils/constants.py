@@ -5,6 +5,7 @@ import pytz
 # --- Часовые пояса ---
 MOSCOW_TZ = pytz.timezone('Europe/Moscow')
 UTC_TZ = pytz.utc
+DEFAULT_TZ = pytz.timezone('Europe/Moscow')
 
 # --- Регулярные выражения ---
 # Для валидации ссылки (простое)

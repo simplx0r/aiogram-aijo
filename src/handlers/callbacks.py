@@ -63,9 +63,9 @@ async def handle_publish_link(query: CallbackQuery, callback_data: ChatSelectCal
 
         # 4. Публикуем ссылку в базе (обновляем статус, ID, планируем напоминания)
         published_link = await publish_link(
-            link_id=link.id,
-            target_chat_id=target_chat_id,
-            posted_message_id=sent_message.message_id
+            link_id=link_id,
+            chat_id=target_chat_id, # Передаем chat_id правильно
+            message_id=sent_message.message_id
         )
 
         if published_link:
