@@ -1,6 +1,9 @@
 # src/handlers/links.py
 import logging
-from typing import Optional, NamedTuple
+import asyncio
+import re
+from typing import Optional
+from loguru import logger # Added logger import
 from aiogram import Bot, Router, F, types
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message, CallbackQuery
