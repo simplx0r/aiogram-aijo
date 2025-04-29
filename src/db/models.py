@@ -25,6 +25,9 @@ class Link(Base):
     added_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now() # Время добавления
     )
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        DateTime(timezone=True), onupdate=func.now(), nullable=True # Время последнего обновления
+    )
     event_time_str: Mapped[Optional[str]] = mapped_column(String, nullable=True) # Время как ввел пользователь (HH:MM)
     event_time_utc: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True, index=True) # Время события в UTC
     is_active: Mapped[bool] = mapped_column(Boolean, default=True) # Флаг активности ссылки
