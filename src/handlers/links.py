@@ -125,13 +125,21 @@ async def _send_announcement_to_group(bot: Bot, link: Link, target_chat_id: int)
     # Создаем клавиатуру для сообщения в группе
     keyboard = get_link_keyboard(link.id)
 
+    send_kwargs = {
+        "chat_id": target_chat_id,
+        "text": group_message_text,
+        "reply_markup": keyboard,
+        "disable_web_page_preview": True
+    }
+
+    # --- НОВОЕ: Добавляем message_thread_id, если это основной чат и топик задан --- #
+    if settings.main_group_id and settings.main_topic_id and target_chat_id == settings.main_group_id:
+        logger.debug(f"Sending to main group {target_chat_id} with topic ID {settings.main_topic_id}")
+        send_kwargs["message_thread_id"] = settings.main_topic_id
+    # --- КОНЕЦ НОВОГО --- #
+
     try:
-        sent_message = await bot.send_message(
-            chat_id=target_chat_id, # Используем переданный chat_id
-            text=group_message_text,
-            reply_markup=keyboard,
-            disable_web_page_preview=True
-        )
+        sent_message = await bot.send_message(**send_kwargs)
         logging.info(f"Sent message for link_id {link.id} to group {target_chat_id}, message_id={sent_message.message_id}")
 
         # Обновляем message_id и chat_id в базе данных
@@ -154,7 +162,12 @@ async def _send_announcement_to_group(bot: Bot, link: Link, target_chat_id: int)
         return sent_message
 
     except TelegramBadRequest as e:
-        logging.error(f"Telegram API error sending link message to group {target_chat_id} for link {link.id}: {e}")
+        # --- НОВОЕ: Уточняем логгирование для ошибки TOPIC_CLOSED --- #
+        error_message = f"Telegram API error sending link message to group {target_chat_id} for link {link.id}: {e}"
+        if "TOPIC_CLOSED" in str(e):
+            error_message += " (Check if the target topic exists and is open)"
+        logging.error(error_message)
+        # --- КОНЕЦ НОВОГО --- #
         return None
     except Exception as e:
         logging.exception(f"Unexpected error sending link message to group {target_chat_id} for link {link.id}: {e}")

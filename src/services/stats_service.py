@@ -43,7 +43,7 @@ async def log_group_message(
             if user_stat:
                 # Обновляем существующую запись
                 user_stat.message_count += 1
-                user_stat.last_message_timestamp = timestamp
+                user_stat.last_seen = timestamp
                 if username and user_stat.username != username: # Обновляем имя пользователя, если изменилось
                     user_stat.username = username
                 logging.debug(f"Incremented message count for existing user {user_id}")
@@ -54,8 +54,8 @@ async def log_group_message(
                     username=username,
                     message_count=1,
                     interview_count=0, # Инициализируем нулем
-                    first_message_timestamp=timestamp,
-                    last_message_timestamp=timestamp
+                    first_seen=timestamp,
+                    last_seen=timestamp
                 )
                 session.add(user_stat)
                 logging.debug(f"Created new user stats entry for user {user_id}")
@@ -83,7 +83,7 @@ async def increment_interview_count(user_id: int, username: Optional[str]) -> bo
             if user_stat:
                 # Обновляем существующую запись
                 user_stat.interview_count += 1
-                user_stat.last_message_timestamp = now # Обновляем время активности
+                user_stat.last_seen = now # Обновляем время активности
                 if username and user_stat.username != username:
                     user_stat.username = username
                 logging.info(f"Incremented interview count for existing user {user_id}")
@@ -93,8 +93,7 @@ async def increment_interview_count(user_id: int, username: Optional[str]) -> bo
                     user_id=user_id,
                     username=username,
                     message_count=0, # Сообщений от бота не считаем
-                    interview_count=1,
-                    last_message_timestamp=now
+                    interview_count=1
                 )
                 session.add(user_stat)
                 logging.info(f"Created new user stats entry and incremented interview count for user {user_id}")
